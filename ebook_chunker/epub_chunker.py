@@ -19,7 +19,12 @@ def _extract_text_from_html(html_content: str) -> str:
     return re.sub(r"\n\s*\n", "\n\n", soup.get_text(separator="\n", strip=True))
 
 
-def chunk_epub(epub_path: str, *, max_chunk_chars: int = MAX_EBOOK_CHUNK_CHARS, min_chunk_chars: int = MIN_EBOOK_CHUNK_CHARS) -> list[str]:
+def chunk_epub(
+    epub_path: str,
+    *,
+    max_chunk_chars: int = MAX_EBOOK_CHUNK_CHARS,
+    min_chunk_chars: int = MIN_EBOOK_CHUNK_CHARS,
+) -> list[str]:
     """
     Chunks an EPUB file using a sophisticated two-stage process:
 
@@ -96,10 +101,7 @@ def chunk_epub(epub_path: str, *, max_chunk_chars: int = MAX_EBOOK_CHUNK_CHARS, 
 
                 # Handle merging small last chunk with accumulated_text
                 for i, chunk in enumerate(semantic_chunks):
-                    if (
-                        i == len(semantic_chunks) - 1
-                        and len(chunk) < min_chunk_chars
-                    ):
+                    if i == len(semantic_chunks) - 1 and len(chunk) < min_chunk_chars:
                         # Keep the last small chunk in accumulated_text for next iteration
                         accumulated_text = chunk
                     else:

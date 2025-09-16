@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(poetry init:*)",
+      "Bash(python:*)",
+      "Bash(poetry add:*)",
+      "Bash(poetry run python:*)",
+      "Bash(poetry install:*)",
+      "Bash(poetry run ebook-chunker:*)",
+      "Bash(poetry run:*)",
+      "Bash(uvx:*)",
+      "Bash(uv tool install:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

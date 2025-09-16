@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "ebook-chunker"
+version = "0.1.0"
+description = "Intelligent EPUB chunking tool with semantic splitting"
+authors = ["User <user@example.com>"]
+readme = "readme.org"
+packages = [{include = "ebook_chunker"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+beautifulsoup4 = "*"
+pynight = "*"
+sentence-transformers = "^5.1.0"
+html5lib = "^1.1"
+lxml = "^6.0.1"
+
+[tool.poetry.scripts]
+ebook-chunker = "ebook_chunker.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
