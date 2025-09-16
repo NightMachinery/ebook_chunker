@@ -1,0 +1,6 @@
+#+TITLE: ebook_chunker/todo
+
+* =uniborg/epub_util= was copied to [[file:ebook_chunker/epub_chunker.py]].
+We need to later on reuse this library in borg, and DRY.
+
+Also [[file:epub_sum_lib/]] was copied.

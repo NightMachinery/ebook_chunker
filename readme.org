@@ -1,0 +1,4 @@
+#+TITLE: ebook_chunker
+
+* Attribution
+[[file:epub_sum_lib/][epub_sum_lib]] has been forked from [[https://github.com/cognitivetech/ollama-ebook-summary][cognitivetech/ollama-ebook-summary: LLM for Long Text Summary (Comprehensive Bulleted Notes)]].
