@@ -9,9 +9,7 @@ import io
 import re
 from epub_sum_lib.epubsplit import SplitEpub
 from epub_sum_lib.chunking import semantic_chunking
-
-MAX_EBOOK_CHUNK_CHARS = 92000
-MIN_EBOOK_CHUNK_CHARS = 5000
+from .constants import MAX_EBOOK_CHUNK_CHARS, MIN_EBOOK_CHUNK_CHARS
 
 
 def _extract_text_from_html(html_content: str) -> str:
@@ -21,7 +19,7 @@ def _extract_text_from_html(html_content: str) -> str:
     return re.sub(r"\n\s*\n", "\n\n", soup.get_text(separator="\n", strip=True))
 
 
-def chunk_epub(epub_path: str) -> list[str]:
+def chunk_epub(epub_path: str, *, max_chunk_chars: int = MAX_EBOOK_CHUNK_CHARS, min_chunk_chars: int = MIN_EBOOK_CHUNK_CHARS) -> list[str]:
     """
     Chunks an EPUB file using a sophisticated two-stage process:
 
@@ -89,18 +87,18 @@ def chunk_epub(epub_path: str) -> list[str]:
                 accumulated_text = section_text
 
             # If accumulated text is too long, apply semantic chunking
-            if len(accumulated_text) > MAX_EBOOK_CHUNK_CHARS:
+            if len(accumulated_text) > max_chunk_chars:
                 # ic(len(accumulated_text))
 
                 semantic_chunks = semantic_chunking(
-                    accumulated_text, max_chunk_size=MAX_EBOOK_CHUNK_CHARS
+                    accumulated_text, max_chunk_size=max_chunk_chars
                 )
 
                 # Handle merging small last chunk with accumulated_text
                 for i, chunk in enumerate(semantic_chunks):
                     if (
                         i == len(semantic_chunks) - 1
-                        and len(chunk) < MIN_EBOOK_CHUNK_CHARS
+                        and len(chunk) < min_chunk_chars
                     ):
                         # Keep the last small chunk in accumulated_text for next iteration
                         accumulated_text = chunk
@@ -110,16 +108,16 @@ def chunk_epub(epub_path: str) -> list[str]:
                             accumulated_text = ""
 
             # If accumulated text is long enough, finalize it
-            elif len(accumulated_text) >= MIN_EBOOK_CHUNK_CHARS:
+            elif len(accumulated_text) >= min_chunk_chars:
                 # ic(len(accumulated_text))
                 final_chunks.append(accumulated_text)
                 accumulated_text = ""
 
         # Handle any remaining accumulated text
         if accumulated_text:
-            if len(accumulated_text) > MAX_EBOOK_CHUNK_CHARS:
+            if len(accumulated_text) > max_chunk_chars:
                 semantic_chunks = semantic_chunking(
-                    accumulated_text, max_chunk_size=MAX_EBOOK_CHUNK_CHARS
+                    accumulated_text, max_chunk_size=max_chunk_chars
                 )
                 final_chunks.extend(semantic_chunks)
             else:
