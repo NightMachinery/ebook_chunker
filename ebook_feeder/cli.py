@@ -216,6 +216,7 @@ def main() -> int:
             return 0
 
         accumulated_output = ""
+        accumulated_prompt_output = ""
 
         # Save run metadata and prompt template to temp dir (non-dry-run)
         if not args.dry_run:
@@ -329,10 +330,38 @@ def main() -> int:
                         )
                         return 1
                     model_obj = ChunkResult.model_validate(data.get("result", {}))
-                    if accumulated_output:
-                        accumulated_output += "\n\n" + model_obj.content
+                    content_piece = model_obj.content
+                    if accumulated_prompt_output:
+                        accumulated_prompt_output += "\n\n" + content_piece
                     else:
-                        accumulated_output = model_obj.content
+                        accumulated_prompt_output = content_piece
+
+                    section_text_saved = content_piece
+                    if args.output_metadata:
+                        ts_saved = data.get("ts")
+                        if not isinstance(ts_saved, str):
+                            ts_saved = datetime.now(timezone.utc).isoformat()
+                        usage_saved = data.get("usage")
+                        usage_meta = (
+                            usage_saved if isinstance(usage_saved, dict) else None
+                        )
+                        meta_header = _build_metadata_comment(
+                            chunk_index=idx,
+                            model_name=str(
+                                data.get("model")
+                                or args.model
+                                or os.environ.get("EBOOK_FEEDER_MODEL", "unknown")
+                            ),
+                            structured=bool(data.get("structured")),
+                            chunk_hash=current_hash,
+                            timestamp=ts_saved,
+                            usage=usage_meta,
+                        )
+                        section_text_saved = meta_header + content_piece
+                    if accumulated_output:
+                        accumulated_output += "\n\n" + section_text_saved
+                    else:
+                        accumulated_output = section_text_saved
                     contiguous += 1
                 except Exception as e:
                     logger.warning(f"Skipping unreadable saved file {fpath.name}: {e}")
@@ -370,6 +399,38 @@ def main() -> int:
                 json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
             )
 
+        def _build_metadata_comment(
+            *,
+            chunk_index: int,
+            model_name: str,
+            structured: bool,
+            chunk_hash: str,
+            timestamp: str,
+            usage: Optional[dict],
+        ) -> str:
+            meta_parts = [
+                f"chunk:{chunk_index:04d}",
+                f"model:{model_name}",
+                f"structured:{structured}",
+                f"hash:{chunk_hash}",
+                f"ts:{timestamp}",
+            ]
+            if usage and (
+                usage.get("prompt_tokens") is not None
+                or usage.get("completion_tokens") is not None
+            ):
+                meta_parts.append(
+                    "tokens:"
+                    + ",".join(
+                        [
+                            f"{usage.get('prompt_tokens') or '-'}p",
+                            f"{usage.get('completion_tokens') or '-'}c",
+                            f"{usage.get('total_tokens') or '-'}t",
+                        ]
+                    )
+                )
+            return "\n<!-- " + " | ".join(meta_parts) + " -->\n\n"
+
         def _call_with_retries(fn, *, max_retries: int, delay: float):
             attempts = max(0, int(max_retries)) + 1
             cur = max(0.0, float(delay))
@@ -398,7 +459,7 @@ def main() -> int:
             logger.info(f"Processing chunk {i}/{len(chunks)}...")
             prompt = _render_prompt(
                 prompt_template,
-                current_output=accumulated_output,
+                current_output=accumulated_prompt_output,
                 current_input=chunk,
             )
 
@@ -407,11 +468,13 @@ def main() -> int:
                 print("PROMPT:")
                 print(prompt)
                 print("---")
+                placeholder = f"[dry-run structured output for chunk {i} (content)]"
+                if accumulated_prompt_output:
+                    accumulated_prompt_output += "\n\n"
+                accumulated_prompt_output += placeholder
                 if accumulated_output:
                     accumulated_output += "\n\n"
-                accumulated_output += (
-                    f"[dry-run structured output for chunk {i} (content)]"
-                )
+                accumulated_output += placeholder
                 continue
 
             try:
@@ -513,34 +576,20 @@ def main() -> int:
                     model_obj = ChunkResult(content=raw_text)
                     new_piece = raw_text
 
-                # Create metadata comment header
+                chunk_hash = _chunk_hash(chunk)
                 ts = datetime.now(timezone.utc).isoformat()
-                meta_parts = [
-                    f"chunk:{i:04d}",
-                    f"model:{model_name}",
-                    f"structured:{bool(args.structured_outputs)}",
-                    f"hash:{_chunk_hash(chunk)}",
-                    f"ts:{ts}",
-                ]
-                if usage_rec and (
-                    usage_rec.get("prompt_tokens") is not None
-                    or usage_rec.get("completion_tokens") is not None
-                ):
-                    meta_parts.append(
-                        "tokens:"
-                        + ",".join(
-                            [
-                                str(usage_rec.get("prompt_tokens") or "-") + "p",
-                                str(usage_rec.get("completion_tokens") or "-") + "c",
-                                str(usage_rec.get("total_tokens") or "-") + "t",
-                            ]
-                        )
-                    )
+                section_text_for_prompt = new_piece
+                section_text_for_save = new_piece
                 if args.output_metadata:
-                    section_header = "\n<!-- " + " | ".join(meta_parts) + " -->\n\n"
-                    section_text = section_header + new_piece
-                else:
-                    section_text = new_piece
+                    section_header = _build_metadata_comment(
+                        chunk_index=i,
+                        model_name=model_name,
+                        structured=bool(args.structured_outputs),
+                        chunk_hash=chunk_hash,
+                        timestamp=ts,
+                        usage=usage_rec,
+                    )
+                    section_text_for_save = section_header + new_piece
 
                 # Save artifacts (chunk input, chunk prompt, intermediate JSON, accumulated)
                 if not args.dry_run:
@@ -557,7 +606,7 @@ def main() -> int:
                     _save_intermediate(
                         directory=temp_dir,
                         index=i,
-                        chunk_hash=_chunk_hash(chunk),
+                        chunk_hash=chunk_hash,
                         raw_text=raw_text,
                         result=model_obj,
                         model_name=model_name,
@@ -568,10 +617,15 @@ def main() -> int:
                 logger.error(f"LLM call failed on chunk {i}: {e}")
                 return 1
 
-            if accumulated_output:
-                accumulated_output += "\n\n" + section_text
+            if accumulated_prompt_output:
+                accumulated_prompt_output += "\n\n" + section_text_for_prompt
             else:
-                accumulated_output = section_text
+                accumulated_prompt_output = section_text_for_prompt
+
+            if accumulated_output:
+                accumulated_output += "\n\n" + section_text_for_save
+            else:
+                accumulated_output = section_text_for_save
 
             # Save running accumulated output snapshot
             if not args.dry_run:
