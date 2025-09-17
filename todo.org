@@ -5,8 +5,15 @@ We need to later on reuse this library in borg, and DRY.
 
 Also [[file:epub_sum_lib/]] was copied.
 
-* add =--gemini-api-key-file= which gets path to text file with api keys separated by new lines. forms a queue; whenever a request fails, move the key to the end, and retry with the next key in queue.
-** have a separate sleep param for retrying when we have a new key on hand.
+* _
+#+BEGIN_SRC markdown
+add an interactive mode to ebook-feeder, where for each chunk, we copy the current  prompt to the clipboard (at the start of this chunk's turn and when the user  presses 'y'), and read the llm's answer from the clipboard when the user presses  enter. (check if the answer is the same as the prompt to avoid a common user  error). do you understand the requirements clearly?
+
+The interactive mode should also write to a temp dir and be able to resume from  one, just like the normal mode.
+#+END_SRC
+
+* DONE add =--gemini-api-key-file= which gets path to text file with api keys separated by new lines. forms a queue; whenever a request fails, move the key to the end, and retry with the next key in queue.
+** @retired have a separate sleep param for retrying when we have a new key on hand.
 
 * @retired
 :PROPERTIES:
