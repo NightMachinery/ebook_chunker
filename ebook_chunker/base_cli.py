@@ -2,14 +2,34 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import Iterable, Tuple
 
 from .constants import MAX_EBOOK_CHUNK_CHARS, MIN_EBOOK_CHUNK_CHARS
 
 
-def setup_logging(verbosity: int) -> None:
-    """Configure logging based on verbosity level."""
-    levels = {0: logging.WARNING, 1: logging.INFO, 2: logging.DEBUG, 3: logging.DEBUG}
+def _normalize_names(
+    names: Iterable[str], *, fallback: Tuple[str, ...]
+) -> Tuple[str, ...]:
+    cleaned = [name for name in names if name]
+    unique = tuple(dict.fromkeys(cleaned))
+    if not unique:
+        return fallback
+    return unique
 
+
+def setup_logging(
+    verbosity: int,
+    *,
+    package_names: Iterable[str] = (
+        "ebook_chunker",
+        "ebook_feeder",
+        "epub_sum_lib",
+    ),
+    muted_packages: Iterable[str] = ("LiteLLM", "litellm"),
+) -> None:
+    """Configure logging with verbose output scoped to project packages."""
+
+    levels = {0: logging.WARNING, 1: logging.INFO, 2: logging.DEBUG, 3: logging.DEBUG}
     level = levels.get(verbosity, logging.DEBUG)
 
     if verbosity >= 3:
@@ -19,7 +39,34 @@ def setup_logging(verbosity: int) -> None:
     else:
         format_str = "%(message)s"
 
-    logging.basicConfig(level=level, format=format_str, stream=sys.stderr)
+    normalized = _normalize_names(package_names, fallback=("ebook_chunker",))
+    muted = _normalize_names(muted_packages, fallback=())
+
+    formatter = logging.Formatter(format_str)
+
+    root_handler = logging.StreamHandler(sys.stderr)
+    root_handler.setFormatter(formatter)
+    root_handler.setLevel(logging.WARNING)
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(logging.WARNING)
+    root_logger.addHandler(root_handler)
+
+    project_handler = logging.StreamHandler(sys.stderr)
+    project_handler.setFormatter(formatter)
+    project_handler.setLevel(level)
+
+    for package_name in normalized:
+        package_logger = logging.getLogger(package_name)
+        package_logger.handlers.clear()
+        package_logger.setLevel(level)
+        package_logger.addHandler(project_handler)
+        package_logger.propagate = False
+
+    for muted_name in muted:
+        muted_logger = logging.getLogger(muted_name)
+        muted_logger.setLevel(logging.WARNING)
 
 
 def add_base_args(parser: argparse.ArgumentParser) -> None:

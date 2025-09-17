@@ -1,3 +1,9 @@
+import litellm
+
+litellm.turn_off_message_logging = True
+litellm.suppress_debug_info = True
+litellm.set_verbose = False
+
 import argparse
 import hashlib
 import json
@@ -444,7 +450,9 @@ def main() -> int:
                         )
 
                 resp = _call_with_retries(
-                    _do_call, max_retries=args.max_retries, delay=args.retry_delay
+                    _do_call,
+                    max_retries=args.max_retries,
+                    delay=args.retry_delay,
                 )
 
                 # Extract content string from response
