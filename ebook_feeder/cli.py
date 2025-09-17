@@ -10,12 +10,15 @@ import json
 import logging
 import os
 import random
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable, Deque, Optional
 
 from ebook_chunker.base_cli import add_base_args, setup_logging
@@ -46,6 +49,177 @@ def _load_api_key_queue(*, file_path: Path) -> Deque[str]:
     if not keys:
         raise ValueError("Gemini API key file contains no usable keys")
     return deque(keys)
+
+
+class ClipboardUnavailableError(RuntimeError):
+    pass
+
+
+@dataclass
+class ClipboardAdapter:
+    copy: Callable[[str], None]
+    paste: Callable[[], str]
+
+
+def _describe_run_mode(*, interactive: bool) -> str:
+    return "interactive" if interactive else "automatic"
+
+
+def _build_clipboard_adapter(
+    *,
+    copy_fn: Optional[Callable[[str], None]] = None,
+    paste_fn: Optional[Callable[[], str]] = None,
+) -> ClipboardAdapter:
+    if (copy_fn is None) ^ (paste_fn is None):
+        raise ValueError(
+            "copy_fn and paste_fn must both be provided or omitted together"
+        )
+
+    if copy_fn and paste_fn:
+        return ClipboardAdapter(copy=copy_fn, paste=paste_fn)
+
+    try:  # Prefer pyperclip if available
+        import pyperclip  # type: ignore
+
+        return ClipboardAdapter(copy=pyperclip.copy, paste=pyperclip.paste)
+    except Exception:  # noqa: BLE001 - fallback to platform tools
+        pass
+
+    platform = sys.platform
+    if platform == "darwin" and shutil.which("pbcopy") and shutil.which("pbpaste"):
+
+        def _copy_darwin(text: str) -> None:
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
+
+        def _paste_darwin() -> str:
+            result = subprocess.run(["pbpaste"], capture_output=True, check=True)
+            return result.stdout.decode("utf-8")
+
+        return ClipboardAdapter(copy=_copy_darwin, paste=_paste_darwin)
+
+    if platform.startswith("linux"):
+        if shutil.which("wl-copy") and shutil.which("wl-paste"):
+
+            def _copy_wl(text: str) -> None:
+                subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True)
+
+            def _paste_wl() -> str:
+                result = subprocess.run(["wl-paste"], capture_output=True, check=True)
+                return result.stdout.decode("utf-8")
+
+            return ClipboardAdapter(copy=_copy_wl, paste=_paste_wl)
+
+        if shutil.which("xclip"):
+
+            def _copy_xclip(text: str) -> None:
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard"],
+                    input=text.encode("utf-8"),
+                    check=True,
+                )
+
+            def _paste_xclip() -> str:
+                result = subprocess.run(
+                    ["xclip", "-selection", "clipboard", "-o"],
+                    capture_output=True,
+                    check=True,
+                )
+                return result.stdout.decode("utf-8")
+
+            return ClipboardAdapter(copy=_copy_xclip, paste=_paste_xclip)
+
+        if shutil.which("xsel"):
+
+            def _copy_xsel(text: str) -> None:
+                subprocess.run(
+                    ["xsel", "--clipboard", "--input"],
+                    input=text.encode("utf-8"),
+                    check=True,
+                )
+
+            def _paste_xsel() -> str:
+                result = subprocess.run(
+                    ["xsel", "--clipboard", "--output"],
+                    capture_output=True,
+                    check=True,
+                )
+                return result.stdout.decode("utf-8")
+
+            return ClipboardAdapter(copy=_copy_xsel, paste=_paste_xsel)
+
+    if platform.startswith("win"):
+        if shutil.which("clip"):
+
+            def _copy_windows(text: str) -> None:
+                subprocess.run(
+                    ["clip"],
+                    input=text.encode("utf-16-le"),
+                    check=True,
+                )
+
+            def _paste_windows() -> str:
+                result = subprocess.run(
+                    [
+                        "powershell",
+                        "-NoProfile",
+                        "-Command",
+                        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Clipboard",
+                    ],
+                    capture_output=True,
+                    check=True,
+                )
+                return result.stdout.decode("utf-8")
+
+            return ClipboardAdapter(copy=_copy_windows, paste=_paste_windows)
+
+    raise ClipboardUnavailableError(
+        "No clipboard integration available. Install 'pyperclip' or ensure a system clipboard utility is present."
+    )
+
+
+def _collect_interactive_response(
+    *,
+    chunk_index: int,
+    total_chunks: int,
+    prompt: str,
+    clipboard: ClipboardAdapter,
+) -> str:
+    def _copy_prompt() -> None:
+        clipboard.copy(prompt)
+        print(
+            f"[chunk {chunk_index}/{total_chunks}] Prompt copied to clipboard. Copy the LLM response and press Enter to capture it."
+        )
+
+    _copy_prompt()
+
+    while True:
+        user_entry = (
+            input("Press Enter to read clipboard, or type 'y' to recopy prompt: ")
+            .strip()
+            .lower()
+        )
+        if user_entry == "y":
+            _copy_prompt()
+            continue
+
+        if user_entry not in {"", "enter"}:  # 'enter' supports accidental typing
+            print(
+                "Unrecognized input. Press Enter to read clipboard or 'y' to recopy prompt."
+            )
+            continue
+
+        answer = clipboard.paste()
+        if not answer.strip():
+            print("Clipboard is empty. Copy the LLM reply and press Enter again.")
+            continue
+
+        if answer.strip() == prompt.strip():
+            print(
+                "Clipboard still contains the prompt. Copy the LLM reply before pressing Enter."
+            )
+            continue
+
+        return answer
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -103,6 +277,14 @@ def parse_arguments() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Prepend an HTML comment with chunk metadata before each section (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "-i",
+        "--interactive",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable manual interactive mode driven via the clipboard (default: %(default)s)",
     )
 
     parser.add_argument(
@@ -186,6 +368,13 @@ def main() -> int:
                 f"Prompt missing placeholder: {PROMPT_CURRENT_OUTPUT_PLACEHOLDER}"
             )
 
+        model_name = args.model or os.environ.get("EBOOK_FEEDER_MODEL")
+        if not model_name:
+            model_name = (
+                "interactive/manual" if args.interactive else "gemini/gemini-2.5-flash"
+            )
+        run_mode = _describe_run_mode(interactive=args.interactive)
+
         # Resolve output path
         if not args.out:
             args.out = args.epub_path.with_name(f"{args.epub_path.stem}_fed.md")
@@ -211,6 +400,17 @@ def main() -> int:
                 "Loaded %d Gemini API key(s) from %s",
                 len(api_key_queue),
                 key_file,
+            )
+
+        clipboard_adapter: Optional[ClipboardAdapter] = None
+        if args.interactive:
+            try:
+                clipboard_adapter = _build_clipboard_adapter()
+            except ClipboardUnavailableError as exc:
+                logger.error(f"Interactive mode requires clipboard support: {exc}")
+                return 1
+            logger.info(
+                "Interactive mode enabled; copy/paste will use the system clipboard."
             )
 
         # Resolve temp directory and optionally resume
@@ -263,11 +463,24 @@ def main() -> int:
                     prompt_copy.write_text(prompt_template, encoding="utf-8")
 
                 run_meta_path = temp_dir / "run.json"
-                selected_model = args.model or os.environ.get(
-                    "EBOOK_FEEDER_MODEL", "gemini/gemini-2.5-flash"
-                )
+                selected_model = model_name
+                existing_meta: dict[str, Any] = {}
+                if run_meta_path.exists():
+                    try:
+                        existing_meta = json.loads(
+                            run_meta_path.read_text(encoding="utf-8")
+                        )
+                    except Exception:
+                        existing_meta = {}
+
+                created_ts = existing_meta.get("created")
+                if not isinstance(created_ts, str):
+                    created_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
                 run_meta = {
-                    "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "created": created_ts,
+                    "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "mode": run_mode,
                     "epub_path": str(args.epub_path),
                     "input_stem": args.epub_path.stem,
                     "max_chunk_chars": int(args.max_chunk_chars),
@@ -281,15 +494,14 @@ def main() -> int:
                         prompt_template.encode("utf-8")
                     ).hexdigest(),
                 }
-                if not run_meta_path.exists():
-                    run_meta_path.write_text(
-                        json.dumps(run_meta, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
+                run_meta_path.write_text(
+                    json.dumps(run_meta, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
             except Exception:
                 pass
 
-        if not args.dry_run:
+        if not args.dry_run and not args.interactive:
             try:
                 import litellm  # type: ignore
             except Exception as e:
@@ -298,11 +510,6 @@ def main() -> int:
                 )
                 logger.debug(f"Import error: {e}")
                 return 1
-
-            # Allow model override via CLI or env var for flexibility
-            model_name = args.model or os.environ.get(
-                "EBOOK_FEEDER_MODEL", "gemini/gemini-2.5-flash"
-            )
 
         # Helper to hash a chunk for resume integrity checks
         def _chunk_hash(text: str) -> str:
@@ -349,6 +556,21 @@ def main() -> int:
                 if meta_path.exists():
                     meta = json.loads(meta_path.read_text(encoding="utf-8"))
                     mismatches = []
+                    saved_mode = meta.get("mode")
+                    if isinstance(saved_mode, str):
+                        if saved_mode not in {"interactive", "automatic"}:
+                            logger.warning(
+                                "Unknown saved run mode '%s' in %s; using current mode %s.",
+                                saved_mode,
+                                meta_path,
+                                run_mode,
+                            )
+                        elif saved_mode != run_mode:
+                            logger.info(
+                                "Resume mode differs (saved %s, current %s); continuing with current mode.",
+                                saved_mode,
+                                run_mode,
+                            )
                     if meta.get("input_stem") != args.epub_path.stem:
                         mismatches.append("input_stem")
                     if int(meta.get("max_chunk_chars", -1)) != int(
@@ -530,75 +752,88 @@ def main() -> int:
                 accumulated_output += placeholder
                 continue
 
+            usage_rec: Optional[dict] = None
+
             try:
-                # Call model (structured or freeform) with retries
-                def _do_call(*, api_key: Optional[str]) -> Any:
-                    sys_msg_structured = (
-                        "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT. "
-                        "Return a strict JSON object that matches the provided schema. No extra keys or text."
+                if args.interactive:
+                    if clipboard_adapter is None:
+                        raise ClipboardUnavailableError(
+                            "Interactive mode requires an initialized clipboard adapter."
+                        )
+                    raw_text = _collect_interactive_response(
+                        chunk_index=i,
+                        total_chunks=len(chunks),
+                        prompt=prompt,
+                        clipboard=clipboard_adapter,
                     )
-                    sys_msg_freeform = "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT."
-                    kwargs = {
-                        "model": model_name,
-                        "temperature": args.temperature,
-                    }
-                    if api_key:
-                        kwargs["api_key"] = api_key
-                    if args.structured_outputs:
-                        schema = ChunkResult.model_json_schema()
-                        kwargs["response_format"] = {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "ChunkResult",
-                                "schema": schema,
-                            },
+                else:
+                    # Call model (structured or freeform) with retries
+                    def _do_call(*, api_key: Optional[str]) -> Any:
+                        sys_msg_structured = (
+                            "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT. "
+                            "Return a strict JSON object that matches the provided schema. No extra keys or text."
+                        )
+                        sys_msg_freeform = "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT."
+                        kwargs = {
+                            "model": model_name,
+                            "temperature": args.temperature,
                         }
-                        kwargs["messages"] = [
-                            {"role": "system", "content": sys_msg_structured},
-                            {"role": "user", "content": prompt},
-                        ]
-                    else:
-                        kwargs["messages"] = [
-                            {"role": "system", "content": sys_msg_freeform},
-                            {"role": "user", "content": prompt},
-                        ]
-                    return litellm.completion(**kwargs)
+                        if api_key:
+                            kwargs["api_key"] = api_key
+                        if args.structured_outputs:
+                            schema = ChunkResult.model_json_schema()
+                            kwargs["response_format"] = {
+                                "type": "json_schema",
+                                "json_schema": {
+                                    "name": "ChunkResult",
+                                    "schema": schema,
+                                },
+                            }
+                            kwargs["messages"] = [
+                                {"role": "system", "content": sys_msg_structured},
+                                {"role": "user", "content": prompt},
+                            ]
+                        else:
+                            kwargs["messages"] = [
+                                {"role": "system", "content": sys_msg_freeform},
+                                {"role": "user", "content": prompt},
+                            ]
+                        return litellm.completion(**kwargs)
 
-                resp = _call_with_retries(
-                    _do_call,
-                    max_retries=args.max_retries,
-                    delay=args.retry_delay,
-                    key_queue=api_key_queue,
-                )
+                    resp = _call_with_retries(
+                        _do_call,
+                        max_retries=args.max_retries,
+                        delay=args.retry_delay,
+                        key_queue=api_key_queue,
+                    )
 
-                # Extract content string from response
-                content = resp.choices[0].message.content  # type: ignore[attr-defined]
-                raw_text = content if isinstance(content, str) else str(content)
+                    # Extract content string from response
+                    content = resp.choices[0].message.content  # type: ignore[attr-defined]
+                    raw_text = content if isinstance(content, str) else str(content)
 
-                # Optional usage summary
-                usage = getattr(resp, "usage", None)
-                usage_rec = None
-                if usage is not None:
-                    try:
-                        usage_rec = {
-                            "prompt_tokens": (
-                                getattr(usage, "prompt_tokens", None)
-                                if not isinstance(usage, dict)
-                                else usage.get("prompt_tokens")
-                            ),
-                            "completion_tokens": (
-                                getattr(usage, "completion_tokens", None)
-                                if not isinstance(usage, dict)
-                                else usage.get("completion_tokens")
-                            ),
-                            "total_tokens": (
-                                getattr(usage, "total_tokens", None)
-                                if not isinstance(usage, dict)
-                                else usage.get("total_tokens")
-                            ),
-                        }
-                    except Exception:
-                        usage_rec = None
+                    # Optional usage summary
+                    usage = getattr(resp, "usage", None)
+                    if usage is not None:
+                        try:
+                            usage_rec = {
+                                "prompt_tokens": (
+                                    getattr(usage, "prompt_tokens", None)
+                                    if not isinstance(usage, dict)
+                                    else usage.get("prompt_tokens")
+                                ),
+                                "completion_tokens": (
+                                    getattr(usage, "completion_tokens", None)
+                                    if not isinstance(usage, dict)
+                                    else usage.get("completion_tokens")
+                                ),
+                                "total_tokens": (
+                                    getattr(usage, "total_tokens", None)
+                                    if not isinstance(usage, dict)
+                                    else usage.get("total_tokens")
+                                ),
+                            }
+                        except Exception:
+                            usage_rec = None
 
                 if usage_rec is not None:
                     prompt_tokens = usage_rec.get("prompt_tokens")
@@ -666,8 +901,14 @@ def main() -> int:
                         structured=bool(args.structured_outputs),
                         usage=usage_rec,
                     )
+            except KeyboardInterrupt:
+                logger.info("Interactive session interrupted by user.")
+                return 130
             except Exception as e:
-                logger.error(f"LLM call failed on chunk {i}: {e}")
+                if args.interactive:
+                    logger.error(f"Interactive capture failed on chunk {i}: {e}")
+                else:
+                    logger.error(f"LLM call failed on chunk {i}: {e}")
                 return 1
 
             if accumulated_prompt_output:
