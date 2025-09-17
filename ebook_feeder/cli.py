@@ -484,6 +484,18 @@ def main() -> int:
                     except Exception:
                         usage_rec = None
 
+                if usage_rec is not None:
+                    prompt_tokens = usage_rec.get("prompt_tokens")
+                    completion_tokens = usage_rec.get("completion_tokens")
+                    total_tokens = usage_rec.get("total_tokens")
+                    logger.info(
+                        "Chunk %04d token usage: prompt=%s completion=%s total=%s",
+                        i,
+                        prompt_tokens if prompt_tokens is not None else "-",
+                        completion_tokens if completion_tokens is not None else "-",
+                        total_tokens if total_tokens is not None else "-",
+                    )
+
                 if args.structured_outputs:
                     # Parse JSON and validate via Pydantic
                     t = raw_text.strip()
