@@ -5,7 +5,8 @@ We need to later on reuse this library in borg, and DRY.
 
 Also [[file:epub_sum_lib/]] was copied.
 
-* add =--api-key-file= which gets path to text file with api keys separated by new lines. forms a queue; whenever a request fails, move the key to the end, and retry with the next key in queue. have a separate sleep param for retrying when we have a new key on hand.
+* add =--gemini-api-key-file= which gets path to text file with api keys separated by new lines. forms a queue; whenever a request fails, move the key to the end, and retry with the next key in queue.
+** have a separate sleep param for retrying when we have a new key on hand.
 
 * @retired
 :PROPERTIES:
