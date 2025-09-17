@@ -1,6 +1,41 @@
 #+TITLE: ebook_chunker/todo
 
-* _
+* =uniborg/epub_util= was copied to [[file:ebook_chunker/epub_chunker.py]].
+We need to later on reuse this library in borg, and DRY.
+
+Also [[file:epub_sum_lib/]] was copied.
+
+* @retired
+:PROPERTIES:
+:visibility: folded
+:END:
+** DONE We can delete most files in =epub_sum_lib=, right?
+
+** NO Write `_fallback_split_html_md` and set this as the default fallback. _fallback_split_html_md should convert to markdown (instead of plain text) and try to first split on `\n\n` and then `\n`.
+But won't wrapping md in html and then converting to md again, pose problems?
+
+*** This function should not really be run at all, so why bother making it better?
+
+
+** DONE _
+#+begin_verse
+▌1. in feeder, save intermediate responses of the model into `--temp-dir` (default to
+▌an os given temp dir) and print this temp dir at the start of the program. no need
+▌to delete them (temp dirs get deleted on restart by the os, right?)
+▌2. can we make `class ChunkResult(BaseModel):` better? eg, add fields for things the
+▌model might want to say, so that we ensure they wont end up in the content field?
+▌3. also, do we have any retry mechanism currently? we def should
+▌4. ideally, we should be able to resume from a given temp dir also
+▌any questions or ideas?
+#+end_verse
+
+#+begin_verse
+Add a markdown comment with metadata at the start of each new output section that llm returns.
+
+Make using the structured json mode optional by adding `--structured-outputs`. off by default.
+#+end_verse
+
+** DONE ebook-feeder seed
 #+BEGIN_SRC markdown
 add a new module `ebook_feeder/cli.py` which inherits all of the cli options of `ebook_chunker/cli.py` (to DRY), but:
 - does away with --format
@@ -22,14 +57,4 @@ Finally, when all the chunks finish processing, it should write the output to `-
 
 Any questions?
 #+END_SRC
-
-* =uniborg/epub_util= was copied to [[file:ebook_chunker/epub_chunker.py]].
-We need to later on reuse this library in borg, and DRY.
-
-Also [[file:epub_sum_lib/]] was copied.
-
-* We can delete most files in =epub_sum_lib=, right?
-
-* Write `_fallback_split_html_md` and set this as the default fallback. _fallback_split_html_md should convert to markdown (instead of plain text) and try to first split on `\n\n` and then `\n`.
-But won't wrapping md in html and then converting to md again, pose problems?
 

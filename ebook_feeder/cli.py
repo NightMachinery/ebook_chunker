@@ -1,7 +1,13 @@
 import argparse
+import hashlib
+import json
 import logging
 import os
+import random
 import sys
+import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ebook_chunker.base_cli import add_base_args, setup_logging
@@ -9,6 +15,8 @@ from ebook_chunker.epub_chunker import chunk_epub
 from .constants import (
     PROMPT_CURRENT_INPUT_PLACEHOLDER,
     PROMPT_CURRENT_OUTPUT_PLACEHOLDER,
+    MAX_RETRIES_DEFAULT,
+    RETRY_DELAY_DEFAULT,
 )
 from .models import ChunkResult
 
@@ -43,6 +51,52 @@ def parse_arguments() -> argparse.Namespace:
         "--out",
         type=Path,
         help="Output markdown file (default: {input_stem}_fed.md)",
+    )
+
+    parser.add_argument(
+        "--structured-outputs",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Request JSON-structured outputs (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "--output-metadata",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Prepend an HTML comment with chunk metadata before each section (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "--temp-dir",
+        type=Path,
+        help=(
+            "Directory to save intermediate model responses. If not provided, a new "
+            "temporary directory is created under the OS temp directory."
+        ),
+    )
+
+    parser.add_argument(
+        "--resume-from",
+        type=Path,
+        help=(
+            "Resume from a previous temp directory containing saved chunk responses. "
+            "Must match the same input and chunking configuration."
+        ),
+    )
+
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=MAX_RETRIES_DEFAULT,
+        help="Max retries for model calls (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        default=RETRY_DELAY_DEFAULT,
+        help="Initial backoff delay in seconds (default: %(default)s)",
     )
 
     parser.add_argument(
@@ -98,6 +152,28 @@ def main() -> int:
             logger.error(f"Output exists: {args.out}. Use --overwrite to replace it.")
             return 1
 
+        # Resolve temp directory and optionally resume
+        temp_dir: Path
+        if args.resume_from:
+            temp_dir = Path(args.resume_from)
+            if not temp_dir.exists() or not temp_dir.is_dir():
+                logger.error(
+                    f"--resume-from path not found or not a directory: {temp_dir}"
+                )
+                return 1
+        else:
+            if args.temp_dir:
+                temp_dir = Path(args.temp_dir)
+                temp_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                base = Path(tempfile.gettempdir())
+                temp_dir = (
+                    base
+                    / f"ebook_feeder_{int(time.time())}_{random.randint(1000,9999)}"
+                )
+                temp_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Temp dir: {temp_dir}")
         logger.info(f"Processing: {args.epub_path}")
         logger.info(f"Using prompt: {args.prompt}")
         logger.info(f"Output: {args.out}")
@@ -117,6 +193,38 @@ def main() -> int:
 
         accumulated_output = ""
 
+        # Save run metadata and prompt template to temp dir (non-dry-run)
+        if not args.dry_run:
+            try:
+                prompt_copy = temp_dir / "prompt.md"
+                if not prompt_copy.exists():
+                    prompt_copy.write_text(prompt_template, encoding="utf-8")
+
+                run_meta_path = temp_dir / "run.json"
+                run_meta = {
+                    "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "epub_path": str(args.epub_path),
+                    "input_stem": args.epub_path.stem,
+                    "max_chunk_chars": int(args.max_chunk_chars),
+                    "min_chunk_chars": int(args.min_chunk_chars),
+                    "skip_index": bool(args.skip_index),
+                    "structured_outputs": bool(args.structured_outputs),
+                    "model": os.environ.get(
+                        "EBOOK_FEEDER_MODEL", "gemini/gemini-2.5-flash"
+                    ),
+                    "prompt_path": str(args.prompt),
+                    "prompt_sha256": hashlib.sha256(
+                        prompt_template.encode("utf-8")
+                    ).hexdigest(),
+                }
+                if not run_meta_path.exists():
+                    run_meta_path.write_text(
+                        json.dumps(run_meta, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+            except Exception:
+                pass
+
         if not args.dry_run:
             try:
                 import litellm  # type: ignore
@@ -130,7 +238,135 @@ def main() -> int:
             # Allow model override via env var for flexibility
             model_name = os.environ.get("EBOOK_FEEDER_MODEL", "gemini/gemini-2.5-flash")
 
+        # Helper to hash a chunk for resume integrity checks
+        def _chunk_hash(text: str) -> str:
+            return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+        # If resuming, pre-load saved results and compute start index
+        start_index = 1
+        if args.resume_from:
+            # Validate run metadata compatibility if present
+            try:
+                meta_path = temp_dir / "run.json"
+                if meta_path.exists():
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                    mismatches = []
+                    if meta.get("input_stem") != args.epub_path.stem:
+                        mismatches.append("input_stem")
+                    if int(meta.get("max_chunk_chars", -1)) != int(
+                        args.max_chunk_chars
+                    ):
+                        mismatches.append("max_chunk_chars")
+                    if int(meta.get("min_chunk_chars", -1)) != int(
+                        args.min_chunk_chars
+                    ):
+                        mismatches.append("min_chunk_chars")
+                    if bool(meta.get("skip_index")) != bool(args.skip_index):
+                        mismatches.append("skip_index")
+                    if bool(meta.get("structured_outputs")) != bool(
+                        args.structured_outputs
+                    ):
+                        mismatches.append("structured_outputs")
+                    # Compare prompt hash
+                    expected_prompt_sha = meta.get("prompt_sha256")
+                    current_prompt_sha = hashlib.sha256(
+                        prompt_template.encode("utf-8")
+                    ).hexdigest()
+                    if (
+                        expected_prompt_sha
+                        and expected_prompt_sha != current_prompt_sha
+                    ):
+                        mismatches.append("prompt_sha256")
+                    if mismatches:
+                        logger.error(
+                            "Resume run metadata mismatch in: " + ", ".join(mismatches)
+                        )
+                        return 1
+            except Exception as e:
+                logger.warning(f"Failed to load/validate run metadata: {e}")
+            saved_files = sorted(temp_dir.glob("chunk_*.json"))
+            contiguous = 0
+            for fpath in saved_files:
+                try:
+                    with fpath.open("r", encoding="utf-8") as fp:
+                        data = json.load(fp)
+                    idx = int(data.get("index"))
+                    if idx != contiguous + 1:
+                        break
+                    expected_hash = data.get("chunk_hash")
+                    current_hash = _chunk_hash(chunks[idx - 1])
+                    if expected_hash != current_hash:
+                        logger.error(
+                            f"Resume mismatch at chunk {idx}: saved hash differs from current run."
+                        )
+                        return 1
+                    model_obj = ChunkResult.model_validate(data.get("result", {}))
+                    if accumulated_output:
+                        accumulated_output += "\n\n" + model_obj.content
+                    else:
+                        accumulated_output = model_obj.content
+                    contiguous += 1
+                except Exception as e:
+                    logger.warning(f"Skipping unreadable saved file {fpath.name}: {e}")
+                    break
+            if contiguous > 0:
+                logger.info(
+                    f"Resuming from chunk {contiguous + 1} (loaded {contiguous})."
+                )
+                start_index = contiguous + 1
+
+        def _save_intermediate(
+            *,
+            directory: Path,
+            index: int,
+            chunk_hash: str,
+            raw_text: str,
+            result: ChunkResult,
+            model_name: str,
+            structured: bool,
+            usage: Optional[dict],
+        ) -> None:
+            ts = datetime.now(timezone.utc).isoformat()
+            out = {
+                "index": index,
+                "chunk_hash": chunk_hash,
+                "model": model_name,
+                "result": result.model_dump(),
+                "raw": raw_text,
+                "structured": structured,
+                "usage": usage,
+                "ts": ts,
+            }
+            fp = directory / f"chunk_{index:04d}.json"
+            fp.write_text(
+                json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+
+        def _call_with_retries(fn, *, max_retries: int, delay: float):
+            attempts = max(0, int(max_retries)) + 1
+            cur = max(0.0, float(delay))
+            for i in range(attempts):
+                try:
+                    return fn()
+                except Exception as e:  # noqa: PERF203
+                    if i >= attempts - 1:
+                        raise
+                    jitter = random.uniform(0, cur * 0.25)
+                    wait_s = cur + jitter
+                    logger.warning(
+                        f"Model call failed (attempt {i+1}/{attempts}), retrying in {wait_s:.2f}s: {e}"
+                    )
+                    time.sleep(wait_s)
+                    cur *= 2.0
+
+        # Ensure chunk input directory exists (non-dry-run)
+        chunks_dir = temp_dir / "chunks"
+        if not args.dry_run:
+            chunks_dir.mkdir(parents=True, exist_ok=True)
+
         for i, chunk in enumerate(chunks, start=1):
+            if i < start_index:
+                continue
             logger.info(f"Processing chunk {i}/{len(chunks)}...")
             prompt = _render_prompt(
                 prompt_template,
@@ -151,47 +387,155 @@ def main() -> int:
                 continue
 
             try:
-                # Always structured output via Pydantic schema
-                import json as _json
+                # Call model (structured or freeform) with retries
+                def _do_call():
+                    sys_msg_structured = (
+                        "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT. "
+                        "Return a strict JSON object that matches the provided schema. No extra keys or text."
+                    )
+                    sys_msg_freeform = "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT."
+                    if args.structured_outputs:
+                        schema = ChunkResult.model_json_schema()
+                        return litellm.chat.completions.create(
+                            model=model_name,
+                            temperature=0,
+                            response_format={
+                                "type": "json_schema",
+                                "json_schema": {
+                                    "name": "ChunkResult",
+                                    "schema": schema,
+                                },
+                            },
+                            messages=[
+                                {"role": "system", "content": sys_msg_structured},
+                                {"role": "user", "content": prompt},
+                            ],
+                        )
+                    else:
+                        return litellm.chat.completions.create(
+                            model=model_name,
+                            temperature=0,
+                            messages=[
+                                {"role": "system", "content": sys_msg_freeform},
+                                {"role": "user", "content": prompt},
+                            ],
+                        )
 
-                sys_msg = (
-                    "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT. "
-                    "Return a strict JSON object that matches the provided schema. No extra keys or text."
+                resp = _call_with_retries(
+                    _do_call, max_retries=args.max_retries, delay=args.retry_delay
                 )
-                schema = ChunkResult.model_json_schema()
-                resp = litellm.completion(
-                    model=model_name,
-                    temperature=0,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {"name": "ChunkResult", "schema": schema},
-                    },
-                    messages=[
-                        {"role": "system", "content": sys_msg},
-                        {"role": "user", "content": prompt},
-                    ],
-                )
+
+                # Extract content string from response
                 content = resp.choices[0].message.content  # type: ignore[attr-defined]
-                text = content if isinstance(content, str) else str(content)
-                t = text.strip()
-                if t.startswith("```"):
-                    lines = t.splitlines()
-                    if lines and lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    t = "\n".join(lines).strip()
-                obj = _json.loads(t)
-                model_obj = ChunkResult.model_validate(obj)
-                new_piece = model_obj.content
+                raw_text = content if isinstance(content, str) else str(content)
+
+                # Optional usage summary
+                usage = getattr(resp, "usage", None)
+                usage_rec = None
+                if usage is not None:
+                    try:
+                        usage_rec = {
+                            "prompt_tokens": (
+                                getattr(usage, "prompt_tokens", None)
+                                if not isinstance(usage, dict)
+                                else usage.get("prompt_tokens")
+                            ),
+                            "completion_tokens": (
+                                getattr(usage, "completion_tokens", None)
+                                if not isinstance(usage, dict)
+                                else usage.get("completion_tokens")
+                            ),
+                            "total_tokens": (
+                                getattr(usage, "total_tokens", None)
+                                if not isinstance(usage, dict)
+                                else usage.get("total_tokens")
+                            ),
+                        }
+                    except Exception:
+                        usage_rec = None
+
+                if args.structured_outputs:
+                    # Parse JSON and validate via Pydantic
+                    t = raw_text.strip()
+                    if t.startswith("```"):
+                        lines = t.splitlines()
+                        if lines and lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines and lines[-1].startswith("```"):
+                            lines = lines[:-1]
+                        t = "\n".join(lines).strip()
+                    obj = json.loads(t)
+                    model_obj = ChunkResult.model_validate(obj)
+                    new_piece = model_obj.content
+                else:
+                    model_obj = ChunkResult(content=raw_text)
+                    new_piece = raw_text
+
+                # Create metadata comment header
+                ts = datetime.now(timezone.utc).isoformat()
+                meta_parts = [
+                    f"chunk:{i:04d}",
+                    f"model:{model_name}",
+                    f"structured:{bool(args.structured_outputs)}",
+                    f"hash:{_chunk_hash(chunk)}",
+                    f"ts:{ts}",
+                ]
+                if usage_rec and (
+                    usage_rec.get("prompt_tokens") is not None
+                    or usage_rec.get("completion_tokens") is not None
+                ):
+                    meta_parts.append(
+                        "tokens:"
+                        + ",".join(
+                            [
+                                str(usage_rec.get("prompt_tokens") or "-") + "p",
+                                str(usage_rec.get("completion_tokens") or "-") + "c",
+                                str(usage_rec.get("total_tokens") or "-") + "t",
+                            ]
+                        )
+                    )
+                if args.output_metadata:
+                    section_header = "<!-- " + " | ".join(meta_parts) + " -->\n"
+                    section_text = section_header + new_piece
+                else:
+                    section_text = new_piece
+
+                # Save artifacts (chunk input, chunk prompt, intermediate JSON, accumulated)
+                if not args.dry_run:
+                    # Save input chunk
+                    (chunks_dir / f"chunk_{i:04d}.md").write_text(
+                        chunk, encoding="utf-8"
+                    )
+                    # Save rendered prompt for this chunk
+                    (temp_dir / f"chunk_{i:04d}_prompt.md").write_text(
+                        prompt, encoding="utf-8"
+                    )
+
+                    # Save intermediate JSON
+                    _save_intermediate(
+                        directory=temp_dir,
+                        index=i,
+                        chunk_hash=_chunk_hash(chunk),
+                        raw_text=raw_text,
+                        result=model_obj,
+                        model_name=model_name,
+                        structured=bool(args.structured_outputs),
+                        usage=usage_rec,
+                    )
             except Exception as e:
                 logger.error(f"LLM call failed on chunk {i}: {e}")
                 return 1
 
             if accumulated_output:
-                accumulated_output += "\n\n" + new_piece
+                accumulated_output += "\n\n" + section_text
             else:
-                accumulated_output = new_piece
+                accumulated_output = section_text
+
+            # Save running accumulated output snapshot
+            if not args.dry_run:
+                (temp_dir / "accumulated.md").write_text(
+                    accumulated_output, encoding="utf-8"
+                )
 
         if args.dry_run:
             logger.info("Dry run finished. No files were written.")
