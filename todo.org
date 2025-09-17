@@ -1,5 +1,28 @@
 #+TITLE: ebook_chunker/todo
 
+* _
+#+BEGIN_SRC markdown
+add a new module `ebook_feeder/cli.py` which inherits all of the cli options of `ebook_chunker/cli.py` (to DRY), but:
+- does away with --format
+- gets a `--prompt=some_path.md`. It is sth like:
+```
+Task: Summarize.
+
+Current Output:
+{CURRENT_OUTPUT}
+
+Current Input:
+{CURRENT_INPUT}
+```
+It should replace the magic string `{CURRENT_OUTPUT}` with the accumulated output thus far, and the magic string `{CURRENT_INPUT}` with the next chunk about to be processed. (Use constants for all magic strings.)
+
+It should use structured output with LiteLLM using Gemini 2.5 Flash to get the output for the current input (and avoid getting the accumulated output again). We then manually concate the new output to the accumulated output.
+
+Finally, when all the chunks finish processing, it should write the output to `-o,--out`. `--out`' format is always md.
+
+Any questions?
+#+END_SRC
+
 * =uniborg/epub_util= was copied to [[file:ebook_chunker/epub_chunker.py]].
 We need to later on reuse this library in borg, and DRY.
 
