@@ -308,6 +308,38 @@ def main() -> int:
         def _chunk_hash(text: str) -> str:
             return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
+        def _build_metadata_comment(
+            *,
+            chunk_index: int,
+            model_name: str,
+            structured: bool,
+            chunk_hash: str,
+            timestamp: str,
+            usage: Optional[dict],
+        ) -> str:
+            meta_parts = [
+                f"chunk:{chunk_index:04d}",
+                f"model:{model_name}",
+                f"structured:{structured}",
+                f"hash:{chunk_hash}",
+                f"ts:{timestamp}",
+            ]
+            if usage and (
+                usage.get("prompt_tokens") is not None
+                or usage.get("completion_tokens") is not None
+            ):
+                meta_parts.append(
+                    "tokens:"
+                    + ",".join(
+                        [
+                            f"{usage.get('prompt_tokens') or '-'}p",
+                            f"{usage.get('completion_tokens') or '-'}c",
+                            f"{usage.get('total_tokens') or '-'}t",
+                        ]
+                    )
+                )
+            return "\n<!-- " + " | ".join(meta_parts) + " -->\n\n"
+
         # If resuming, pre-load saved results and compute start index
         start_index = 1
         if args.resume_from:
@@ -435,38 +467,6 @@ def main() -> int:
             fp.write_text(
                 json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
             )
-
-        def _build_metadata_comment(
-            *,
-            chunk_index: int,
-            model_name: str,
-            structured: bool,
-            chunk_hash: str,
-            timestamp: str,
-            usage: Optional[dict],
-        ) -> str:
-            meta_parts = [
-                f"chunk:{chunk_index:04d}",
-                f"model:{model_name}",
-                f"structured:{structured}",
-                f"hash:{chunk_hash}",
-                f"ts:{timestamp}",
-            ]
-            if usage and (
-                usage.get("prompt_tokens") is not None
-                or usage.get("completion_tokens") is not None
-            ):
-                meta_parts.append(
-                    "tokens:"
-                    + ",".join(
-                        [
-                            f"{usage.get('prompt_tokens') or '-'}p",
-                            f"{usage.get('completion_tokens') or '-'}c",
-                            f"{usage.get('total_tokens') or '-'}t",
-                        ]
-                    )
-                )
-            return "\n<!-- " + " | ".join(meta_parts) + " -->\n\n"
 
         def _call_with_retries(
             fn: Callable[[Optional[str]], Any],
