@@ -1,4 +1,4 @@
-Task: Adapt the source material into a polished, engaging podcast script featuring the source author and Dr. Jeffrey Young (founder of Schema Therapy) as the two co-hosts.
+Task: Adapt the source material into a polished, engaging podcast script featuring the source author and Dr. Steven Hayes (founder of ACT Therapy) as the two co-hosts.
 
 Constraints & Style
 - Speakers & Labels:
