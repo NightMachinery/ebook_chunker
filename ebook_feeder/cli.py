@@ -13,9 +13,10 @@ import random
 import sys
 import tempfile
 import time
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Deque, Optional
 
 from ebook_chunker.base_cli import add_base_args, setup_logging
 from ebook_chunker.epub_chunker import chunk_epub
@@ -32,6 +33,19 @@ def _render_prompt(template: str, *, current_output: str, current_input: str) ->
     prompt = template.replace(PROMPT_CURRENT_OUTPUT_PLACEHOLDER, current_output)
     prompt = prompt.replace(PROMPT_CURRENT_INPUT_PLACEHOLDER, current_input)
     return prompt
+
+
+def _load_api_key_queue(*, file_path: Path) -> Deque[str]:
+    lines = file_path.read_text(encoding="utf-8").splitlines()
+    keys = []
+    for raw in lines:
+        candidate = raw.strip()
+        if not candidate or candidate.startswith("#"):
+            continue
+        keys.append(candidate)
+    if not keys:
+        raise ValueError("Gemini API key file contains no usable keys")
+    return deque(keys)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -124,6 +138,12 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--gemini-api-key-file",
+        type=Path,
+        help="Path to a file containing Gemini API keys, one per line",
+    )
+
+    parser.add_argument(
         "-n",
         "--dry-run",
         action=argparse.BooleanOptionalAction,
@@ -175,6 +195,23 @@ def main() -> int:
         if args.out.exists() and not args.overwrite:
             logger.error(f"Output exists: {args.out}. Use --overwrite to replace it.")
             return 1
+
+        api_key_queue: Optional[Deque[str]] = None
+        if args.gemini_api_key_file:
+            key_file = args.gemini_api_key_file.expanduser()
+            if not key_file.exists() or not key_file.is_file():
+                logger.error(f"Gemini API key file not found or not a file: {key_file}")
+                return 1
+            try:
+                api_key_queue = _load_api_key_queue(file_path=key_file)
+            except ValueError as exc:
+                logger.error(str(exc))
+                return 1
+            logger.info(
+                "Loaded %d Gemini API key(s) from %s",
+                len(api_key_queue),
+                key_file,
+            )
 
         # Resolve temp directory and optionally resume
         temp_dir: Path
@@ -431,13 +468,29 @@ def main() -> int:
                 )
             return "\n<!-- " + " | ".join(meta_parts) + " -->\n\n"
 
-        def _call_with_retries(fn, *, max_retries: int, delay: float):
+        def _call_with_retries(
+            fn: Callable[[Optional[str]], Any],
+            *,
+            max_retries: int,
+            delay: float,
+            key_queue: Optional[Deque[str]] = None,
+        ) -> Any:
             attempts = max(0, int(max_retries)) + 1
             cur = max(0.0, float(delay))
             for i in range(attempts):
+                api_key = None
+                if key_queue:
+                    api_key = key_queue[0]
+                    os.environ["GEMINI_API_KEY"] = api_key
                 try:
-                    return fn()
+                    return fn(api_key=api_key)
                 except Exception as e:  # noqa: PERF203
+                    if key_queue:
+                        key_queue.append(key_queue.popleft())
+                        logger.debug(
+                            "Rotated Gemini API key after failure on attempt %d.",
+                            i + 1,
+                        )
                     if i >= attempts - 1:
                         raise
                     jitter = random.uniform(0, cur * 0.25)
@@ -479,43 +532,43 @@ def main() -> int:
 
             try:
                 # Call model (structured or freeform) with retries
-                def _do_call():
+                def _do_call(*, api_key: Optional[str]) -> Any:
                     sys_msg_structured = (
                         "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT. "
                         "Return a strict JSON object that matches the provided schema. No extra keys or text."
                     )
                     sys_msg_freeform = "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT."
+                    kwargs = {
+                        "model": model_name,
+                        "temperature": args.temperature,
+                    }
+                    if api_key:
+                        kwargs["api_key"] = api_key
                     if args.structured_outputs:
                         schema = ChunkResult.model_json_schema()
-                        return litellm.completion(
-                            model=model_name,
-                            temperature=args.temperature,
-                            response_format={
-                                "type": "json_schema",
-                                "json_schema": {
-                                    "name": "ChunkResult",
-                                    "schema": schema,
-                                },
+                        kwargs["response_format"] = {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "ChunkResult",
+                                "schema": schema,
                             },
-                            messages=[
-                                {"role": "system", "content": sys_msg_structured},
-                                {"role": "user", "content": prompt},
-                            ],
-                        )
+                        }
+                        kwargs["messages"] = [
+                            {"role": "system", "content": sys_msg_structured},
+                            {"role": "user", "content": prompt},
+                        ]
                     else:
-                        return litellm.completion(
-                            model=model_name,
-                            temperature=args.temperature,
-                            messages=[
-                                {"role": "system", "content": sys_msg_freeform},
-                                {"role": "user", "content": prompt},
-                            ],
-                        )
+                        kwargs["messages"] = [
+                            {"role": "system", "content": sys_msg_freeform},
+                            {"role": "user", "content": prompt},
+                        ]
+                    return litellm.completion(**kwargs)
 
                 resp = _call_with_retries(
                     _do_call,
                     max_retries=args.max_retries,
                     delay=args.retry_delay,
+                    key_queue=api_key_queue,
                 )
 
                 # Extract content string from response
