@@ -29,16 +29,28 @@ GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set 
 #+end_src
 
 *** hayes
+**** 1.3.2
+#+begin_src zsh :eval never
+$proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_Hayes_v1.3.2.md --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o tmp/boundaries_podcast_dr_hayes_g25_v1.3.2.md
+#+end_src
+
+**** 1.3.1
 #+begin_src zsh :eval never
 GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_Hayes_v1.3.1.md --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o tmp/boundaries_podcast_dr_hayes_g25_v1.3.1.md
 #+end_src
 
-
+**** 1.3
 #+begin_src zsh :eval never
 GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_Hayes_v1.3.md --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o tmp/boundaries_podcast_dr_hayes_g25_v1.3.md
 #+end_src
 
 **** @fa
+***** 1.3.2
+#+begin_src zsh :eval never
+$proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_Hayes_v1.3.2_fa.md --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o tmp/boundaries_podcast_dr_hayes_g25_v1.3.2_fa.md
+#+end_src
+
+***** 1.3.1
 #+begin_src zsh :eval never
 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_Hayes_v1.3.1_fa.md --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o tmp/boundaries_podcast_dr_hayes_g25_v1.3.1_fa.md
 #+end_src
@@ -46,3 +58,9 @@ $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'examples/
 #+begin_src zsh :eval never
 GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_Hayes_v1.3.1_fa.md --min-chunk-chars 30000 -m gemini/gemini-2.5-flash -o tmp/boundaries_podcast_dr_hayes_flash25_v1.3.1_fa.md
 #+end_src
+
+***** 1.3
+#+begin_src zsh :eval never
+$proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_Hayes_v1.3_fa.md --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o tmp/boundaries_podcast_dr_hayes_g25_v1.3_fa.md
+#+end_src
+
