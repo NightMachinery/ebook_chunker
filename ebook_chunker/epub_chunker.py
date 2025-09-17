@@ -161,26 +161,30 @@ def _chunk_segments(
         # Soft finalize before new section if current meets min
         if role == "section_break":
             if current and current_len >= min_chunk_chars:
+                # current.append((_wrap_as_html_paragraph("Section Break"), None))  #: for debugging
+
+                chunks.append(_safe_html_join([h for h, _ in current]))
+
                 logger.debug(
                     "flush_on_section_boundary: current_len=%d chunks_so_far=%d",
                     current_len,
                     len(chunks),
                 )
-                # current.append((_wrap_as_html_paragraph("Section Break"), None))  #: for debugging
 
-                chunks.append(_safe_html_join([h for h, _ in current]))
                 current, current_len, last_preferred_boundary = [], 0, None
             # Do not add a segment for section_break; continue
             continue
 
         # @disabled Start new chunk at headings when current chunk is strong enough
         if False and role == "heading" and current and current_len >= min_chunk_chars:
+            chunks.append(_safe_html_join([h for h, _ in current]))
+
             logger.debug(
                 "flush_on_heading: current_len=%d chunks_so_far=%d",
                 current_len,
                 len(chunks),
             )
-            chunks.append(_safe_html_join([h for h, _ in current]))
+
             current, current_len, last_preferred_boundary = [], 0, None
 
         current.append((seg_html, role))
