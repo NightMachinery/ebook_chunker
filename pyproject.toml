@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "ebook-chunker"
 version = "0.1.0"
-description = "Intelligent EPUB chunking tool with semantic splitting"
+description = "Structure-aware EPUB chunking tool"
 authors = ["User <user@example.com>"]
 readme = "readme.org"
 packages = [{include = "ebook_chunker"}]
@@ -10,7 +10,6 @@ packages = [{include = "ebook_chunker"}]
 python = "^3.9"
 beautifulsoup4 = "*"
 pynight = "*"
-sentence-transformers = "^5.1.0"
 html5lib = "^1.1"
 lxml = "^6.0.1"
 

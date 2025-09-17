@@ -4,3 +4,9 @@
 We need to later on reuse this library in borg, and DRY.
 
 Also [[file:epub_sum_lib/]] was copied.
+
+* We can delete most files in =epub_sum_lib=, right?
+
+* Write `_fallback_split_html_md` and set this as the default fallback. _fallback_split_html_md should convert to markdown (instead of plain text) and try to first split on `\n\n` and then `\n`.
+But won't wrapping md in html and then converting to md again, pose problems?
+

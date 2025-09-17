@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from .epub_chunker import chunk_epub
-from .pandoc_utils import convert_text, get_file_extension
+from .pandoc_utils import get_file_extension
 from .constants import MAX_EBOOK_CHUNK_CHARS, MIN_EBOOK_CHUNK_CHARS
 
 
@@ -171,7 +171,7 @@ def parse_arguments() -> argparse.Namespace:
         "--format",
         choices=["md", "txt", "html"],
         default="md",
-        help="Output format (default: md)",
+        help="Output format; pandoc required for md/txt",
     )
 
     parser.add_argument(
@@ -256,6 +256,7 @@ def main() -> int:
             str(args.epub_path),
             max_chunk_chars=args.max_chunk_chars,
             min_chunk_chars=args.min_chunk_chars,
+            format=args.format,
         )
 
         if not chunks:
@@ -275,18 +276,13 @@ def main() -> int:
         # Process chunks
         input_stem = args.epub_path.stem
         total_written = 0
+        lens = [len(c) for c in chunks]
+        total_chars = sum(lens)
+        min_len = min(lens) if lens else 0
+        max_len = max(lens) if lens else 0
+        avg_len = (total_chars / len(lens)) if lens else 0
 
         for i, chunk in enumerate(chunks):
-            # Convert format if needed
-            if args.format != "md":
-                try:
-                    chunk = convert_text(
-                        chunk, from_format="markdown", to_format=args.format
-                    )
-                except Exception as e:
-                    logger.error(f"Format conversion failed for chunk {i+1}: {e}")
-                    return 1
-
             # Generate filename
             filename_pattern = args.out.replace("{input_stem}", input_stem)
             if padding:
@@ -308,10 +304,14 @@ def main() -> int:
 
         # Summary
         if args.dry_run:
-            print(f"Dry run completed. Would create {len(chunks)} files.")
+            print(
+                f"Dry run completed. Would create {len(chunks)} files totaling {total_chars} characters (min={min_len}, avg={avg_len:.1f}, max={max_len})."
+            )
         else:
             if args.verbose >= 1:
-                logger.info(f"Successfully written {total_written} chunk files")
+                logger.info(
+                    f"Successfully written {total_written} chunk files (total characters: {total_chars}; min={min_len}, avg={avg_len:.1f}, max={max_len})"
+                )
 
         return 0
 
