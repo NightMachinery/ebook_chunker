@@ -55,6 +55,23 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        help=(
+            "Model name to use (default: env EBOOK_FEEDER_MODEL or 'gemini/gemini-2.5-flash')"
+        ),
+    )
+
+    parser.add_argument(
+        "-t",
+        "--temperature",
+        type=float,
+        default=1.0,
+        help="Sampling temperature for the model (default: %(default)s)",
+    )
+
+    parser.add_argument(
         "--structured-outputs",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -202,6 +219,9 @@ def main() -> int:
                     prompt_copy.write_text(prompt_template, encoding="utf-8")
 
                 run_meta_path = temp_dir / "run.json"
+                selected_model = args.model or os.environ.get(
+                    "EBOOK_FEEDER_MODEL", "gemini/gemini-2.5-flash"
+                )
                 run_meta = {
                     "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "epub_path": str(args.epub_path),
@@ -210,9 +230,8 @@ def main() -> int:
                     "min_chunk_chars": int(args.min_chunk_chars),
                     "skip_index": bool(args.skip_index),
                     "structured_outputs": bool(args.structured_outputs),
-                    "model": os.environ.get(
-                        "EBOOK_FEEDER_MODEL", "gemini/gemini-2.5-flash"
-                    ),
+                    "model": selected_model,
+                    "temperature": float(args.temperature),
                     "prompt_path": str(args.prompt),
                     "prompt_sha256": hashlib.sha256(
                         prompt_template.encode("utf-8")
@@ -236,8 +255,10 @@ def main() -> int:
                 logger.debug(f"Import error: {e}")
                 return 1
 
-            # Allow model override via env var for flexibility
-            model_name = os.environ.get("EBOOK_FEEDER_MODEL", "gemini/gemini-2.5-flash")
+            # Allow model override via CLI or env var for flexibility
+            model_name = args.model or os.environ.get(
+                "EBOOK_FEEDER_MODEL", "gemini/gemini-2.5-flash"
+            )
 
         # Helper to hash a chunk for resume integrity checks
         def _chunk_hash(text: str) -> str:
@@ -399,7 +420,7 @@ def main() -> int:
                         schema = ChunkResult.model_json_schema()
                         return litellm.completion(
                             model=model_name,
-                            temperature=0,
+                            temperature=args.temperature,
                             response_format={
                                 "type": "json_schema",
                                 "json_schema": {
@@ -415,7 +436,7 @@ def main() -> int:
                     else:
                         return litellm.completion(
                             model=model_name,
-                            temperature=0,
+                            temperature=args.temperature,
                             messages=[
                                 {"role": "system", "content": sys_msg_freeform},
                                 {"role": "user", "content": prompt},
@@ -496,7 +517,7 @@ def main() -> int:
                         )
                     )
                 if args.output_metadata:
-                    section_header = "<!-- " + " | ".join(meta_parts) + " -->\n"
+                    section_header = "\n<!-- " + " | ".join(meta_parts) + " -->\n\n"
                     section_text = section_header + new_piece
                 else:
                     section_text = new_piece
