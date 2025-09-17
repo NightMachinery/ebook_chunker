@@ -8,3 +8,11 @@ GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set 
 #+begin_src zsh :eval never
 GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_v1.1.md --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o tmp/boundaries_podcast_dr_young_g25.md
 #+end_src
+
+#+begin_src zsh :eval never
+GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_v1.2.md --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o tmp/boundaries_podcast_dr_young_g25_v1.2.md
+#+end_src
+
+#+begin_src zsh :eval never
+GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_v1.2.md --min-chunk-chars 30000 -m gemini/gemini-2.5-flash -o tmp/boundaries_podcast_dr_young_flash_v1.2.md
+#+end_src
