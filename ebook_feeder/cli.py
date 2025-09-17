@@ -219,6 +219,23 @@ def _collect_interactive_response(
             )
             continue
 
+        preview_lines = 3
+        lines = answer.splitlines()
+        head = lines[:preview_lines]
+        tail = lines[-preview_lines:] if len(lines) > preview_lines else []
+        print("Captured response preview:")
+        if head:
+            print(">>> first lines >>>")
+            print("\n".join(head))
+        else:
+            print("(response begins with an empty line)")
+        if tail:
+            print("... (middle omitted) ...")
+            print("<<< last lines <<<")
+            print("\n".join(tail))
+        elif not head:
+            print("(response is empty)")
+
         return answer
 
 
