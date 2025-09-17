@@ -282,7 +282,7 @@ def main() -> int:
         return 130
     except Exception as e:
         logging.getLogger(__name__).error(f"Error: {e}")
-        if args.verbose >= 3:
+        if args.verbose >= 1:
             import traceback
 
             traceback.print_exc()

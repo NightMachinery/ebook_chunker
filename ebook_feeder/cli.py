@@ -9,6 +9,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from ebook_chunker.base_cli import add_base_args, setup_logging
 from ebook_chunker.epub_chunker import chunk_epub
@@ -396,7 +397,7 @@ def main() -> int:
                     sys_msg_freeform = "You are a precise assistant. Respond only for CURRENT_INPUT; do not restate CURRENT_OUTPUT."
                     if args.structured_outputs:
                         schema = ChunkResult.model_json_schema()
-                        return litellm.chat.completions.create(
+                        return litellm.completion(
                             model=model_name,
                             temperature=0,
                             response_format={
@@ -412,7 +413,7 @@ def main() -> int:
                             ],
                         )
                     else:
-                        return litellm.chat.completions.create(
+                        return litellm.completion(
                             model=model_name,
                             temperature=0,
                             messages=[
@@ -552,7 +553,7 @@ def main() -> int:
         return 130
     except Exception as e:
         logging.getLogger(__name__).error(f"Error: {e}")
-        if args and getattr(args, "verbose", 0) >= 3:
+        if args and getattr(args, "verbose", 0) >= 1:
             import traceback
 
             traceback.print_exc()
