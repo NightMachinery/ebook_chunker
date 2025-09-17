@@ -399,15 +399,17 @@ def chunk_epub(
                     # ic(heading_text)
 
                     if heading_text in [
-                            "index",
-                            "acknowledgments",
+                        "index",
+                        "acknowledgments",
                     ]:
                         stop_at = i
                         break
             if stop_at is not None:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        "skip_index: last_section=%d stop_at_segment=%d", sec_idx, stop_at
+                        "skip_index: last_section=%d stop_at_segment=%d",
+                        sec_idx,
+                        stop_at,
                     )
                 segs = segs[:stop_at]
 
