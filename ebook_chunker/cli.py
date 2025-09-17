@@ -7,23 +7,7 @@ from typing import Optional, Union
 from .epub_chunker import chunk_epub
 from .pandoc_utils import get_file_extension
 from .constants import MAX_EBOOK_CHUNK_CHARS, MIN_EBOOK_CHUNK_CHARS
-
-
-def setup_logging(verbosity: int) -> None:
-    """Configure logging based on verbosity level."""
-    levels = {0: logging.WARNING, 1: logging.INFO, 2: logging.DEBUG, 3: logging.DEBUG}
-
-    level = levels.get(verbosity, logging.DEBUG)
-
-    # Configure logging format based on verbosity
-    if verbosity >= 3:
-        format_str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    elif verbosity >= 2:
-        format_str = "%(levelname)s: %(message)s"
-    else:
-        format_str = "%(message)s"
-
-    logging.basicConfig(level=level, format=format_str, stream=sys.stderr)
+from .base_cli import add_base_args, setup_logging
 
 
 def calculate_padding(num_chunks: int, pad_option: Union[str, int]) -> Optional[int]:
@@ -137,22 +121,7 @@ def parse_arguments() -> argparse.Namespace:
         description="Chunk EPUB files into semantically coherent segments",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-
-    parser.add_argument("epub_path", type=Path, help="Path to the EPUB file to chunk")
-
-    parser.add_argument(
-        "--max-chunk-chars",
-        type=int,
-        default=MAX_EBOOK_CHUNK_CHARS,
-        help=f"Maximum characters per chunk (default: {MAX_EBOOK_CHUNK_CHARS})",
-    )
-
-    parser.add_argument(
-        "--min-chunk-chars",
-        type=int,
-        default=MIN_EBOOK_CHUNK_CHARS,
-        help=f"Minimum characters per chunk (default: {MIN_EBOOK_CHUNK_CHARS})",
-    )
+    add_base_args(parser)
 
     parser.add_argument(
         "-o",
@@ -175,34 +144,18 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--skip-index",
-        dest="skip_index",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Stop at 'Index' heading in last section",
-    )
-
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase verbosity (can be used multiple times: -v, -vv, -vvv)",
-    )
-
-    parser.add_argument(
         "-n",
         "--dry-run",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Preview what would be created without writing files",
+        help="Preview what would be created without writing files (default: %(default)s)",
     )
 
     parser.add_argument(
         "--overwrite",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Overwrite existing files (default: True)",
+        help="Overwrite existing files (default: %(default)s)",
     )
 
     return parser.parse_args()

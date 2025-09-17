@@ -2,9 +2,9 @@
 name = "ebook-chunker"
 version = "0.1.0"
 description = "Structure-aware EPUB chunking tool"
-authors = ["User <user@example.com>"]
+authors = ["NightMachinary <feraidoonmehri@gmail.com>"]
 readme = "readme.org"
-packages = [{include = "ebook_chunker"}]
+packages = [{include = "ebook_chunker"}, {include = "ebook_feeder"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
@@ -12,9 +12,12 @@ beautifulsoup4 = "*"
 pynight = "*"
 html5lib = "^1.1"
 lxml = "^6.0.1"
+litellm = "*"
+pydantic = "*"
 
 [tool.poetry.scripts]
 ebook-chunker = "ebook_chunker.cli:main"
+ebook-feeder = "ebook_feeder.cli:main"
 
 [build-system]
 requires = ["poetry-core"]
