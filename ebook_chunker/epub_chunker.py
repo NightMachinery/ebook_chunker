@@ -316,6 +316,7 @@ def chunk_epub(
     min_chunk_chars: int = MIN_EBOOK_CHUNK_CHARS,
     format: str = "md",
     converter: Optional[Callable[[str], str]] = None,
+    skip_index_p: bool = True,
 ) -> list[str]:
     """
     Chunk an EPUB with structure-aware splitting and optional format conversion.
@@ -326,6 +327,8 @@ def chunk_epub(
                Signature: converter(html: str) -> str
                If not provided, will attempt to use pandoc if available,
                otherwise fall back to plain-text extraction for non-HTML.
+    skip_index_p: If True, in the last section, encountering a heading titled
+                  'Index' (case-insensitive) ends processing at that point.
     """
     logger = logging.getLogger(__name__)
     html_chunks: List[str] = []
@@ -384,6 +387,30 @@ def chunk_epub(
         # Parse section html into structural segments and append
         section_soup = BeautifulSoup(section_html, "html.parser")
         segs = _html_segments_from_soup(section_soup)
+
+        # If this is the last section and skip_index_p is set, cut at an 'Index' heading
+        if skip_index_p and sec_idx <= len(sections) - 2:
+            #: Sometimes it's not necessary in the very last section, so have some tolerance.
+
+            stop_at = None
+            for i, (seg_html, role) in enumerate(segs):
+                if role == "heading":
+                    heading_text = _extract_text_from_html(seg_html).strip().lower()
+                    # ic(heading_text)
+
+                    if heading_text in [
+                            "index",
+                            "acknowledgments",
+                    ]:
+                        stop_at = i
+                        break
+            if stop_at is not None:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "skip_index: last_section=%d stop_at_segment=%d", sec_idx, stop_at
+                    )
+                segs = segs[:stop_at]
+
         combined_segments.extend(segs)
         # Insert a soft section boundary between sections
         if sec_idx < len(sections) - 1:

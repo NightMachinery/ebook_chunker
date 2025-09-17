@@ -175,6 +175,14 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--skip-index",
+        dest="skip_index",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Stop at 'Index' heading in last section",
+    )
+
+    parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -257,6 +265,7 @@ def main() -> int:
             max_chunk_chars=args.max_chunk_chars,
             min_chunk_chars=args.min_chunk_chars,
             format=args.format,
+            skip_index_p=args.skip_index,
         )
 
         if not chunks:
