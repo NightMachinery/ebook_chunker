@@ -76,3 +76,9 @@ tmuxnewsh2 circle_G25 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API
 #+begin_src zsh :eval never
 tmuxnewsh2 circle_Flash25 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv ~/'base/examples/private/Lord Of Mysteries 2_ Circle Of Inevitability c1-1180 - Cutt.epub' --prompt ~/'base/prompts/summarize_fiction_v1.1.md' --min-chunk-chars 30000 -m gemini/gemini-2.5-flash -o ~/'base/Circle of Inevitability/Flash25.md' --resume-from ~/'base/Circle of Inevitability/Flash25'
 #+end_src
+
+* translate
+#+begin_src zsh :eval never
+$proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'tmp/boundaries_podcast_dr_hayes_opus_v1.3.2.md' --prompt prompts/translate_2fa_v1.md --min-chunk-chars 15000 --max-chunk-chars 30000 -m gemini/gemini-2.5-pro -o 'tmp/boundaries_podcast_dr_hayes_opus_v1.3.2_fa.md'
+#+end_src
+
