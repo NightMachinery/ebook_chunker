@@ -133,6 +133,15 @@ def chunk_files(
     # Extract segments from all files
     all_segments: List[tuple[str, str]] = []
 
+    try:
+        boundary_marker = {
+            FileBoundary.HARD: "hard_file_boundary",
+            FileBoundary.SOFT: "section_break",
+            FileBoundary.NONE: None,
+        }[file_boundary]
+    except KeyError as err:
+        raise ValueError(f"Unsupported file boundary: {file_boundary}") from err
+
     for i, file_path in enumerate(file_paths):
         logger.debug(f"Processing file {i+1}/{len(file_paths)}: {file_path}")
 
@@ -144,28 +153,10 @@ def chunk_files(
                 logger.warning(f"No segments extracted from file: {file_path}")
                 continue
 
-            if file_boundary == FileBoundary.HARD and file_segments:
-                # For hard boundaries, add file segments and mark file boundary
-                for seg_html, role in file_segments:
-                    all_segments.append((seg_html, role))
+            all_segments.extend(file_segments)
 
-                # Add a special hard boundary marker (except for the last file)
-                if i < len(file_paths) - 1:
-                    all_segments.append(("", "hard_file_boundary"))
-
-            elif file_boundary == FileBoundary.SOFT and file_segments:
-                # Add file segments normally
-                for seg_html, role in file_segments:
-                    all_segments.append((seg_html, role))
-
-                # Add soft boundary between files (except for the last file)
-                if i < len(file_paths) - 1:
-                    all_segments.append(("", "section_break"))
-
-            else:  # FileBoundary.NONE
-                # Just concatenate all segments with no boundaries
-                for seg_html, role in file_segments:
-                    all_segments.append((seg_html, role))
+            if boundary_marker and i < len(file_paths) - 1:
+                all_segments.append(("", boundary_marker))
 
         except Exception as e:
             logger.error(f"Error processing file {file_path}: {e}")
