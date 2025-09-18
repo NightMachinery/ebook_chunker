@@ -1,5 +1,9 @@
 #+TITLE: ebook_feeder/private_readme
 
+* Remember
+** Decrease =--max-chunk-chars= for tasks such as translation that need long outputs.
+This is especially true for non-EPUB inputs, as they do not get any soft section breaks like EPUBs do.
+
 * _
 #+begin_src zsh :eval never
 GEMINI_API_KEY=$gemini_api_key $proxyenv ebook-feeder -vv 'examples/private/Set Boundaries, Find Peace.epub' --prompt prompts/podcast_v1.1.md --min-chunk-chars 30000 -o tmp/boundaries_podcast_dr_young.md

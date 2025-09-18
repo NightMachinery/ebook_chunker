@@ -5,29 +5,29 @@ We need to later on reuse this library in borg, and DRY.
 
 Also [[file:epub_sum_lib/]] was copied.
 
-* DONE add support for input files other than EPUB
+* when extracting the extension of files, the last =\.[^.]+$= should be the extension. Is the current behavior this? It seems to malperform for names such as =sth_v1.3.1.md=.
+
+* @retired
+:PROPERTIES:
+:visibility: folded
+:END:
+** DONE add support for input files other than EPUB
 #+BEGIN_SRC markdown
 ebook-chunker: add support for input files other than EPUB; first of all, allow supplying multiple files instead of a single epub file. Add `--file-boundary=(none|soft|hard)` for chunking purposes. None just concats with no added boundary, soft adds soft section breaks (like we do for epub sections), and hard always ends a chunk at file boundary (even when lower than the min chunk size). For supporting the different file formats, I think the easiest is to standardize the current epub code on html inputs, and convert other formats to html using pandoc first? What do you think?
 #+END_SRC
 
-* DRY the various dup code in different conditional branches
+** DONE DRY the various dup code in different conditional branches
 
-* when extracting the extension of files, the last =\.[^.]+$= should be the extension. Is the current behavior this? It seems to malperform for names such as =sth_v1.3.1.md=.
-
-* DONE add interactive mode to ebook-feeder
+** DONE add interactive mode to ebook-feeder
 #+BEGIN_SRC markdown
 add an interactive mode to ebook-feeder, where for each chunk, we copy the current  prompt to the clipboard (at the start of this chunk's turn and when the user  presses 'y'), and read the llm's answer from the clipboard when the user presses  enter. (check if the answer is the same as the prompt to avoid a common user  error). do you understand the requirements clearly?
 
 The interactive mode should also write to a temp dir and be able to resume from  one, just like the normal mode.
 #+END_SRC
 
-* DONE add =--gemini-api-key-file= which gets path to text file with api keys separated by new lines. forms a queue; whenever a request fails, move the key to the end, and retry with the next key in queue.
-** @retired have a separate sleep param for retrying when we have a new key on hand.
+** DONE add =--gemini-api-key-file= which gets path to text file with api keys separated by new lines. forms a queue; whenever a request fails, move the key to the end, and retry with the next key in queue.
+*** @retired have a separate sleep param for retrying when we have a new key on hand.
 
-* @retired
-:PROPERTIES:
-:visibility: folded
-:END:
 ** DONE We can delete most files in =epub_sum_lib=, right?
 
 ** NO Write `_fallback_split_html_md` and set this as the default fallback. _fallback_split_html_md should convert to markdown (instead of plain text) and try to first split on `\n\n` and then `\n`.
