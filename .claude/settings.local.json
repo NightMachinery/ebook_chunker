@@ -11,7 +11,8 @@
       "Bash(poetry run ebook-chunker:*)",
       "Bash(poetry run:*)",
       "Bash(uvx:*)",
-      "Bash(uv tool install:*)"
+      "Bash(uv tool install:*)",
+      "Bash(black:*)"
     ],
     "deny": [],
     "ask": []
