@@ -1,3 +1,4 @@
+from IPython import embed
 from pynight.common_icecream import (
     ic,
 )  #: used for debugging, DO NOT REMOVE even if currently unused
@@ -148,15 +149,43 @@ def _chunk_segments(
     logger = logging.getLogger(__name__)
 
     def seg_len(seg_html: str) -> int:
-        return len(_extract_text_from_html(seg_html))
+        #: Plus 1, because when we join them together in `_safe_html_join`, we add a newline. Anyhow, joining increases the length somehow by a bit.
+        return len(_extract_text_from_html(seg_html)) + 1
 
     chunks: List[str] = []
+    seg_lens: List[int] = []
     current: List[Tuple[str, str]] = []  # (html, role)
     current_len = 0
     last_preferred_boundary: Optional[int] = None
 
     for seg_html, role in segments:
         # ic(role)
+
+        # Hard boundary: force flush current chunk at file boundary
+        if role == "hard_file_boundary":
+            if current:
+                chunk_html = _safe_html_join([h for h, _ in current])
+                chunk_len = len(_extract_text_from_html(chunk_html))
+
+                if chunk_len > max_chunk_chars:
+                    # Use fallback splitting for oversized chunks
+                    fb_chunks = _fallback_split_html(
+                        chunk_html,
+                        max_chunk_chars=max_chunk_chars,
+                        min_chunk_chars=min_chunk_chars,
+                    )
+                    chunks.extend(fb_chunks)
+                else:
+                    chunks.append(chunk_html)
+
+                logger.debug(
+                    "hard_boundary_flush: chunk_len=%d chunks_so_far=%d",
+                    chunk_len,
+                    len(chunks),
+                )
+
+                current, current_len, last_preferred_boundary = [], 0, None
+            continue
 
         # Soft finalize before new section if current meets min
         if role == "section_break":
@@ -172,6 +201,7 @@ def _chunk_segments(
                 )
 
                 current, current_len, last_preferred_boundary = [], 0, None
+                seg_lens = []
             # Do not add a segment for section_break; continue
             continue
 
@@ -189,14 +219,8 @@ def _chunk_segments(
 
         current.append((seg_html, role))
         current_seg_len = seg_len(seg_html)
+        seg_lens.append(current_seg_len)
         current_len += current_seg_len
-        if role in {
-            "block",
-            "list_item",
-            "heading",
-            "section_break",
-        }:
-            last_preferred_boundary = len(current)
 
         if current_len >= max_chunk_chars:
             split_at: Optional[int] = None
@@ -206,39 +230,49 @@ def _chunk_segments(
                 )
                 if size_until >= min_chunk_chars:
                     split_at = last_preferred_boundary
-            if split_at is None and (current_len - current_seg_len) >= min_chunk_chars:
-                split_at = len(current)
 
-            if split_at is not None:
-                boundary_kind = (
-                    "preferred_boundary"
-                    if split_at == (last_preferred_boundary or -1)
-                    else "end_boundary"
+            if split_at is None:
+                #: We must split at a point, and so we ignore the min_chunk_chars constraint
+                split_at = -1
+
+            boundary_kind = (
+                "preferred_boundary"
+                if split_at == (last_preferred_boundary)
+                else "end_boundary"
+            )
+            piece = current[:split_at]
+            remaining = current[split_at:]
+            piece_html = _safe_html_join([h for h, _ in piece])
+            piece_text_len = len(_extract_text_from_html(piece_html))
+            logger.debug(
+                "split: kind=%s split_at=%d piece_text_len=%d remaining_segments=%d",
+                boundary_kind,
+                split_at,
+                piece_text_len,
+                len(remaining),
+            )
+            if piece_text_len > max_chunk_chars:
+                fb = _fallback_split_html(
+                    piece_html,
+                    max_chunk_chars=max_chunk_chars,
+                    min_chunk_chars=min_chunk_chars,
                 )
-                piece = current[:split_at]
-                remaining = current[split_at:]
-                piece_html = _safe_html_join([h for h, _ in piece])
-                piece_text_len = len(_extract_text_from_html(piece_html))
-                logger.debug(
-                    "split: kind=%s split_at=%d piece_text_len=%d remaining_segments=%d",
-                    boundary_kind,
-                    split_at,
-                    piece_text_len,
-                    len(remaining),
-                )
-                if piece_text_len > max_chunk_chars:
-                    fb = _fallback_split_html(
-                        piece_html,
-                        max_chunk_chars=max_chunk_chars,
-                        min_chunk_chars=min_chunk_chars,
-                    )
-                    logger.debug("fallback_piece_used: produced=%d", len(fb))
-                    chunks.extend(fb)
-                else:
-                    chunks.append(piece_html)
-                current = remaining
-                current_len = sum(seg_len(h) for h, _ in current)
-                last_preferred_boundary = None
+                logger.debug("fallback_piece_used: produced=%d", len(fb))
+                chunks.extend(fb)
+            else:
+                chunks.append(piece_html)
+            current = remaining
+            current_len = sum(seg_len(h) for h, _ in current)
+            last_preferred_boundary = None
+            seg_lens = []
+        else:
+            if role in {
+                "block",
+                "list_item",
+                "heading",
+                "section_break",
+            }:
+                last_preferred_boundary = len(current)
 
     if current:
         final_html = _safe_html_join([h for h, _ in current])
@@ -313,29 +347,22 @@ def structure_aware_chunking(
     )
 
 
-def chunk_epub(
+def epub_to_segments(
     epub_path: str,
     *,
-    max_chunk_chars: int = MAX_EBOOK_CHUNK_CHARS,
-    min_chunk_chars: int = MIN_EBOOK_CHUNK_CHARS,
-    format: str = "md",
-    converter: Optional[Callable[[str], str]] = None,
     skip_index_p: bool = True,
-) -> list[str]:
+) -> List[tuple[str, str]]:
     """
-    Chunk an EPUB with structure-aware splitting and optional format conversion.
+    Extract segments from an EPUB file with TOC-aware sectioning.
 
-    epub_path: Path to the EPUB file.
-    format: One of 'md', 'txt', 'html'.
-    converter: Optional callable that converts HTML to target format.
-               Signature: converter(html: str) -> str
-               If not provided, will attempt to use pandoc if available,
-               otherwise fall back to plain-text extraction for non-HTML.
-    skip_index_p: If True, in the last section, encountering a heading titled
-                  'Index' (case-insensitive) ends processing at that point.
+    Args:
+        epub_path: Path to the EPUB file
+        skip_index_p: If True, stop processing at 'Index' or 'Acknowledgments' heading
+
+    Returns:
+        List of (html, role) tuples with section breaks between TOC sections
     """
     logger = logging.getLogger(__name__)
-    html_chunks: List[str] = []
 
     with open(epub_path, "rb") as f:
         epub_io = io.BytesIO(f.read())
@@ -363,10 +390,14 @@ def chunk_epub(
         logger.debug("sections: count=%d", len(sections))
 
     # Build a single segment list across sections, inserting soft section boundaries
-    combined_segments: List[Tuple[str, str]] = []
+    combined_segments: List[tuple[str, str]] = []
     for sec_idx, section_linenums in enumerate(sections):
         files_in_section = splitter.get_split_files(section_linenums)
-        section_html_parts: List[str] = []
+
+        # Process each HTML file separately to avoid massive segments
+        section_segments: List[tuple[str, str]] = []
+        total_section_text_len = 0
+
         for _, _, _, filedata in files_in_section:
             try:
                 soup = BeautifulSoup(filedata, "html.parser")
@@ -374,23 +405,33 @@ def chunk_epub(
                 inner_html = "".join(str(child) for child in body.children)
                 if not inner_html.strip():
                     inner_html = str(body)
-                section_html_parts.append(inner_html)
+
+                if inner_html.strip():
+                    # Parse each file individually to get finer-grained segments
+                    file_soup = BeautifulSoup(inner_html, "html.parser")
+                    file_segs = _html_segments_from_soup(file_soup)
+                    section_segments.extend(file_segs)
+                    total_section_text_len += len(_extract_text_from_html(inner_html))
             except Exception:
-                section_html_parts.append(filedata)
-        section_html = _safe_html_join(section_html_parts)
-        if not section_html.strip():
+                # Fallback: treat as raw text
+                if filedata.strip():
+                    section_segments.append((filedata, "block"))
+                    total_section_text_len += len(filedata)
+
+        if not section_segments:
             continue
+
         if logger.isEnabledFor(logging.DEBUG):
-            section_text_len = len(_extract_text_from_html(section_html))
             logger.debug(
-                "section_%d: files=%d text_len=%d",
+                "section_%d: files=%d segments=%d text_len=%d",
                 sec_idx,
-                len(section_html_parts),
-                section_text_len,
+                len(files_in_section),
+                len(section_segments),
+                total_section_text_len,
             )
-        # Parse section html into structural segments and append
-        section_soup = BeautifulSoup(section_html, "html.parser")
-        segs = _html_segments_from_soup(section_soup)
+
+        # Use the segments from this section
+        segs = section_segments
 
         # If this is the last section and skip_index_p is set, cut at an 'Index' heading
         if skip_index_p and sec_idx <= len(sections) - 2:
@@ -443,6 +484,34 @@ def chunk_epub(
             total_text_len,
         )
 
+    return combined_segments
+
+
+def chunk_epub(
+    epub_path: str,
+    *,
+    max_chunk_chars: int = MAX_EBOOK_CHUNK_CHARS,
+    min_chunk_chars: int = MIN_EBOOK_CHUNK_CHARS,
+    format: str = "md",
+    converter: Optional[Callable[[str], str]] = None,
+    skip_index_p: bool = True,
+) -> list[str]:
+    """
+    Chunk an EPUB with structure-aware splitting and optional format conversion.
+
+    epub_path: Path to the EPUB file.
+    format: One of 'md', 'txt', 'html'.
+    converter: Optional callable that converts HTML to target format.
+               Signature: converter(html: str) -> str
+               If not provided, will attempt to use pandoc if available,
+               otherwise fall back to plain-text extraction for non-HTML.
+    skip_index_p: If True, in the last section, encountering a heading titled
+                  'Index' (case-insensitive) ends processing at that point.
+    """
+    # Extract segments using the centralized function
+    combined_segments = epub_to_segments(epub_path, skip_index_p=skip_index_p)
+
+    # Chunk the segments
     html_chunks = _chunk_segments(
         combined_segments,
         max_chunk_chars=max_chunk_chars,
