@@ -153,10 +153,17 @@ def _chunk_segments(
         return len(_extract_text_from_html(seg_html)) + 1
 
     chunks: List[str] = []
-    seg_lens: List[int] = []
     current: List[Tuple[str, str]] = []  # (html, role)
     current_len = 0
     last_preferred_boundary: Optional[int] = None
+    seg_lens: List[int] = []
+
+    def reset_current_state() -> None:
+        nonlocal current, current_len, last_preferred_boundary, seg_lens
+        current = []
+        current_len = 0
+        last_preferred_boundary = None
+        seg_lens = []
 
     for seg_html, role in segments:
         # ic(role)
@@ -184,7 +191,7 @@ def _chunk_segments(
                     len(chunks),
                 )
 
-                current, current_len, last_preferred_boundary = [], 0, None
+                reset_current_state()
             continue
 
         # Soft finalize before new section if current meets min
@@ -200,8 +207,7 @@ def _chunk_segments(
                     len(chunks),
                 )
 
-                current, current_len, last_preferred_boundary = [], 0, None
-                seg_lens = []
+                reset_current_state()
             # Do not add a segment for section_break; continue
             continue
 
@@ -215,7 +221,7 @@ def _chunk_segments(
                 len(chunks),
             )
 
-            current, current_len, last_preferred_boundary = [], 0, None
+            reset_current_state()
 
         current.append((seg_html, role))
         current_seg_len = seg_len(seg_html)
