@@ -70,7 +70,7 @@ $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'examples/
 #+end_src
 
 #+begin_src zsh :eval never
-tmuxnewsh2 circle_G25 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv ~/'base/examples/private/Lord Of Mysteries 2_ Circle Of Inevitability c1-1180 - Cutt.epub' --prompt ~/'base/prompts/summarize_fiction_v1.1.md' --min-chunk-chars 30000 -m gemini/gemini-2.5-flash -o ~/'base/Circle of Inevitability/G25.md' --resume-from ~/'base/Circle of Inevitability/G25'
+tmuxnewsh2 circle_G25 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv ~/'base/examples/private/Lord Of Mysteries 2_ Circle Of Inevitability c1-1180 - Cutt.epub' --prompt ~/'base/prompts/summarize_fiction_v1.1.md' --min-chunk-chars 30000 -m gemini/gemini-2.5-pro -o ~/'base/Circle of Inevitability/G25.md' --resume-from ~/'base/Circle of Inevitability/G25' --max-current-output-chars 250_000
 #+end_src
 
 #+begin_src zsh :eval never
