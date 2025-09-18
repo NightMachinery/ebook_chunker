@@ -1,5 +1,6 @@
 This file provides guidance to coding agents when working with code in this repository.
 
+- Shell: bash
 - After editing files, run `black` on them to both format them correctly and to check for syntax errors.
 
 ------------------------------------------------------------------------
