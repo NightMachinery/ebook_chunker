@@ -812,7 +812,8 @@ def main() -> int:
                         f"Model call failed (attempt {i+1}/{attempts}), retrying in {wait_s:.2f}s: {e}"
                     )
                     time.sleep(wait_s)
-                    cur *= 2.0
+                    cur *= 1.5
+                    cur = min(cur, 3600)
 
         # Ensure chunk input directory exists (non-dry-run)
         chunks_dir = temp_dir / "chunks"
