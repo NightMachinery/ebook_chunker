@@ -48,6 +48,10 @@ def _parse_max_current_output_chars(value: str) -> Optional[int]:
         raise argparse.ArgumentTypeError(
             "Expected a non-negative integer or 'none'"
         ) from exc
+
+    if parsed == 0:
+        return None
+
     if parsed < 0:
         raise argparse.ArgumentTypeError("Expected a non-negative integer or 'none'")
     return parsed
@@ -63,9 +67,15 @@ def _normalize_max_current_output_chars(
             raise argparse.ArgumentTypeError(
                 "Expected a non-negative integer or 'none'"
             )
+
+        if value == 0:
+            return None
+
         return value
+
     if isinstance(value, str):
         return _parse_max_current_output_chars(value)
+
     raise argparse.ArgumentTypeError("Expected a non-negative integer or 'none'")
 
 
