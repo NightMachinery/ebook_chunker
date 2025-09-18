@@ -71,7 +71,12 @@ def setup_logging(
 
 def add_base_args(parser: argparse.ArgumentParser) -> None:
     """Add base arguments shared by CLIs."""
-    parser.add_argument("epub_path", type=Path, help="Path to the EPUB file to process")
+    parser.add_argument(
+        "input_files",
+        type=Path,
+        nargs="+",
+        help="Path(s) to input file(s) to process (EPUB, HTML, Markdown, Text, etc.)",
+    )
 
     parser.add_argument(
         "--max-chunk-chars",

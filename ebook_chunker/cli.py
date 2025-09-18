@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Union
 
-from .epub_chunker import chunk_epub
+from .file_chunker import chunk_files, FileBoundary
 from .pandoc_utils import get_file_extension
 from .constants import MAX_EBOOK_CHUNK_CHARS, MIN_EBOOK_CHUNK_CHARS
 from .base_cli import add_base_args, setup_logging
@@ -118,7 +118,7 @@ def write_chunk_file(
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Chunk EPUB files into semantically coherent segments",
+        description="Chunk EPUB and other files into semantically coherent segments",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_base_args(parser)
@@ -158,6 +158,15 @@ def parse_arguments() -> argparse.Namespace:
         help="Overwrite existing files (default: %(default)s)",
     )
 
+    parser.add_argument(
+        "--file-boundary",
+        choices=["none", "soft", "hard"],
+        default="soft",
+        help="How to handle boundaries between multiple input files: "
+        "'none' (no boundaries), 'soft' (section breaks), "
+        "'hard' (always end chunks at file boundaries) (default: %(default)s)",
+    )
+
     return parser.parse_args()
 
 
@@ -170,23 +179,24 @@ def main() -> int:
         setup_logging(args.verbose)
         logger = logging.getLogger(__name__)
 
-        # Validate input file
-        if not args.epub_path.exists():
-            logger.error(f"EPUB file not found: {args.epub_path}")
-            return 1
+        # Validate input files
+        for input_file in args.input_files:
+            if not input_file.exists():
+                logger.error(f"Input file does not exist: {input_file}")
+                return 1
+            if not input_file.is_file():
+                logger.error(f"Path is not a file: {input_file}")
+                return 1
 
-        if not args.epub_path.is_file():
-            logger.error(f"Path is not a file: {args.epub_path}")
-            return 1
-
-        # Generate output path if not provided
+        # Generate output path if not provided (use first input file's stem)
+        first_input = args.input_files[0]
         if not args.out:
-            input_stem = args.epub_path.stem
+            input_stem = first_input.stem
             args.out = f"{input_stem}_chunks/{input_stem}_{{chunk_num}}.{{ext}}"
         else:
             # If path ends with directory separator, add input basename
             if args.out.endswith(("/", "\\")):
-                input_stem = args.epub_path.stem
+                input_stem = first_input.stem
                 args.out = f"{args.out}{input_stem}_{{chunk_num}}.{{ext}}"
             else:
                 # Ensure required placeholders are present
@@ -208,21 +218,26 @@ def main() -> int:
                         args.out = f"{args.out}.{{ext}}"
 
         if args.verbose >= 1:
-            logger.info(f"Processing: {args.epub_path}")
+            logger.info(
+                f"Processing {len(args.input_files)} file(s): {[str(f) for f in args.input_files]}"
+            )
             logger.info(f"Output pattern: {args.out}")
+            logger.info(f"File boundary mode: {args.file_boundary}")
 
-        # Chunk the EPUB
-        logger.info("Chunking EPUB file...")
-        chunks = chunk_epub(
-            str(args.epub_path),
+        # Use centralized chunking for all file types
+        logger.info("Chunking files...")
+        file_boundary = FileBoundary(args.file_boundary)
+        chunks = chunk_files(
+            args.input_files,
             max_chunk_chars=args.max_chunk_chars,
             min_chunk_chars=args.min_chunk_chars,
+            file_boundary=file_boundary,
             format=args.format,
             skip_index_p=args.skip_index,
         )
 
         if not chunks:
-            logger.warning("No chunks generated from EPUB file")
+            logger.warning("No chunks generated from input file(s)")
             return 0
 
         # Calculate padding
@@ -236,7 +251,7 @@ def main() -> int:
                 logger.info("No padding for chunk numbers")
 
         # Process chunks
-        input_stem = args.epub_path.stem
+        input_stem = first_input.stem
         total_written = 0
         lens = [len(c) for c in chunks]
         total_chars = sum(lens)

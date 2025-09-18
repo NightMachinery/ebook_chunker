@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Deque, Optional, Union
 
 from ebook_chunker.base_cli import add_base_args, setup_logging
-from ebook_chunker.epub_chunker import chunk_epub
+from ebook_chunker.file_chunker import chunk_files, FileBoundary
 from .constants import (
     PROMPT_CURRENT_INPUT_PLACEHOLDER,
     PROMPT_CURRENT_OUTPUT_PLACEHOLDER,
@@ -431,9 +431,11 @@ def main() -> int:
         setup_logging(args.verbose)
         logger = logging.getLogger(__name__)
 
-        if not args.epub_path.exists() or not args.epub_path.is_file():
-            logger.error(f"EPUB file not found: {args.epub_path}")
-            return 1
+        # Validate input files
+        for input_file in args.input_files:
+            if not input_file.exists() or not input_file.is_file():
+                logger.error(f"Input file not found: {input_file}")
+                return 1
 
         if not args.prompt.exists() or not args.prompt.is_file():
             logger.error(f"Prompt file not found: {args.prompt}")
@@ -458,9 +460,11 @@ def main() -> int:
 
         # Resolve output path
         if not args.out:
-            args.out = args.epub_path.with_name(f"{args.epub_path.stem}_fed.md")
+            first_input = args.input_files[0]
+            args.out = first_input.with_name(f"{first_input.stem}_fed.md")
         elif args.out.is_dir():
-            args.out = args.out / f"{args.epub_path.stem}_fed.md"
+            first_input = args.input_files[0]
+            args.out = args.out / f"{first_input.stem}_fed.md"
 
         if args.out.exists() and not args.overwrite:
             logger.error(f"Output exists: {args.out}. Use --overwrite to replace it.")
@@ -516,15 +520,16 @@ def main() -> int:
                 temp_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"Temp dir: {temp_dir}")
-        logger.info(f"Processing: {args.epub_path}")
+        logger.info(f"Processing: {args.input_files}")
         logger.info(f"Using prompt: {args.prompt}")
         logger.info(f"Output: {args.out}")
 
-        logger.info("Chunking EPUB file...")
-        chunks = chunk_epub(
-            str(args.epub_path),
+        logger.info("Chunking files...")
+        chunks = chunk_files(
+            args.input_files,
             max_chunk_chars=args.max_chunk_chars,
             min_chunk_chars=args.min_chunk_chars,
+            file_boundary=FileBoundary.SOFT,  # Default for ebook_feeder
             format="md",
             skip_index_p=args.skip_index,
         )
@@ -562,8 +567,8 @@ def main() -> int:
                     "created": created_ts,
                     "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "mode": run_mode,
-                    "epub_path": str(args.epub_path),
-                    "input_stem": args.epub_path.stem,
+                    "input_files": [str(f) for f in args.input_files],
+                    "input_stem": args.input_files[0].stem,
                     "max_chunk_chars": int(args.max_chunk_chars),
                     "min_chunk_chars": int(args.min_chunk_chars),
                     "skip_index": bool(args.skip_index),
@@ -653,7 +658,7 @@ def main() -> int:
                                 saved_mode,
                                 run_mode,
                             )
-                    if meta.get("input_stem") != args.epub_path.stem:
+                    if meta.get("input_stem") != args.input_files[0].stem:
                         mismatches.append("input_stem")
                     if int(meta.get("max_chunk_chars", -1)) != int(
                         args.max_chunk_chars
