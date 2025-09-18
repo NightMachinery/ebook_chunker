@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Structure-aware EPUB chunking tool"
 authors = ["NightMachinary <feraidoonmehri@gmail.com>"]
 readme = "readme.org"
-packages = [{include = "ebook_chunker"}, {include = "ebook_feeder"}]
+packages = [{include = "ebook_chunker"}, {include = "ebook_feeder"}, {include = "epub_sum_lib"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
