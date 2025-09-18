@@ -1,4 +1,15 @@
 #+TITLE: ebook_chunker
 
+* Installation
+Install from PyPI or directly from GitHub. The commands below force pip to reinstall the package and fetch the latest available version even if one is already installed.
+
+#+BEGIN_SRC sh
+pip install --upgrade --force-reinstall ebook-chunker
+#+END_SRC
+
+#+BEGIN_SRC sh
+pip install --upgrade --force-reinstall 'git+https://github.com/NightMachinery/ebook_chunker.git'
+#+END_SRC
+
 * Attribution
 [[file:epub_sum_lib/][epub_sum_lib]] has been forked from [[https://github.com/cognitivetech/ollama-ebook-summary][cognitivetech/ollama-ebook-summary: LLM for Long Text Summary (Comprehensive Bulleted Notes)]].

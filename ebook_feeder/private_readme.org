@@ -69,3 +69,10 @@ $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'examples/
 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'examples/private/Lord Of Mysteries 2_ Circle Of Inevitability c1-1180 - Cutt.epub' --prompt prompts/summarize_fiction_v1.md --min-chunk-chars 30000 -m gemini/gemini-2.5-flash -o 'tmp/circle_of_inevitability/' 
 #+end_src
 
+#+begin_src zsh :eval never
+tmuxnewsh2 circle_G25 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv ~/'base/examples/private/Lord Of Mysteries 2_ Circle Of Inevitability c1-1180 - Cutt.epub' --prompt ~/'base/prompts/summarize_fiction_v1.1.md' --min-chunk-chars 30000 -m gemini/gemini-2.5-flash -o ~/'base/Circle of Inevitability/G25.md' --resume-from ~/'base/Circle of Inevitability/G25'
+#+end_src
+
+#+begin_src zsh :eval never
+tmuxnewsh2 circle_Flash25 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv ~/'base/examples/private/Lord Of Mysteries 2_ Circle Of Inevitability c1-1180 - Cutt.epub' --prompt ~/'base/prompts/summarize_fiction_v1.1.md' --min-chunk-chars 30000 -m gemini/gemini-2.5-flash -o ~/'base/Circle of Inevitability/Flash25.md' --resume-from ~/'base/Circle of Inevitability/Flash25'
+#+end_src

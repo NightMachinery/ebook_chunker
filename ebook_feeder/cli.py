@@ -19,7 +19,7 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Callable, Deque, Optional
+from typing import Any, Callable, Deque, Optional, Union
 
 from ebook_chunker.base_cli import add_base_args, setup_logging
 from ebook_chunker.epub_chunker import chunk_epub
@@ -36,6 +36,45 @@ def _render_prompt(template: str, *, current_output: str, current_input: str) ->
     prompt = template.replace(PROMPT_CURRENT_OUTPUT_PLACEHOLDER, current_output)
     prompt = prompt.replace(PROMPT_CURRENT_INPUT_PLACEHOLDER, current_input)
     return prompt
+
+
+def _parse_max_current_output_chars(value: str) -> Optional[int]:
+    lowered = value.strip().lower()
+    if lowered == "none":
+        return None
+    try:
+        parsed = int(lowered)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "Expected a non-negative integer or 'none'"
+        ) from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("Expected a non-negative integer or 'none'")
+    return parsed
+
+
+def _normalize_max_current_output_chars(
+    value: Union[int, str, None],
+) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        if value < 0:
+            raise argparse.ArgumentTypeError(
+                "Expected a non-negative integer or 'none'"
+            )
+        return value
+    if isinstance(value, str):
+        return _parse_max_current_output_chars(value)
+    raise argparse.ArgumentTypeError("Expected a non-negative integer or 'none'")
+
+
+def _tail_text(value: str, *, limit: Optional[int]) -> str:
+    if not value or limit is None:
+        return value
+    if limit == 0:
+        return ""
+    return value[-limit:]
 
 
 def _load_api_key_queue(*, file_path: Path) -> Deque[str]:
@@ -290,6 +329,17 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--max-current-output-chars",
+        type=_parse_max_current_output_chars,
+        default="none",
+        metavar="COUNT|none",
+        help=(
+            "Maximum characters from accumulated output to include in prompts; "
+            "use 'none' for unlimited (default: %(default)s)"
+        ),
+    )
+
+    parser.add_argument(
         "--output-metadata",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -357,7 +407,11 @@ def parse_arguments() -> argparse.Namespace:
         help="Overwrite existing output files (default: %(default)s)",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.max_current_output_chars = _normalize_max_current_output_chars(
+        args.max_current_output_chars
+    )
+    return args
 
 
 def main() -> int:
@@ -504,6 +558,7 @@ def main() -> int:
                     "min_chunk_chars": int(args.min_chunk_chars),
                     "skip_index": bool(args.skip_index),
                     "structured_outputs": bool(args.structured_outputs),
+                    "max_current_output_chars": args.max_current_output_chars,
                     "model": selected_model,
                     "temperature": float(args.temperature),
                     "prompt_path": str(args.prompt),
@@ -604,6 +659,15 @@ def main() -> int:
                         args.structured_outputs
                     ):
                         mismatches.append("structured_outputs")
+                    try:
+                        saved_max_output_chars = _normalize_max_current_output_chars(
+                            meta.get("max_current_output_chars")
+                        )
+                    except argparse.ArgumentTypeError:
+                        mismatches.append("max_current_output_chars")
+                    else:
+                        if saved_max_output_chars != args.max_current_output_chars:
+                            mismatches.append("max_current_output_chars")
                     # Compare prompt hash
                     expected_prompt_sha = meta.get("prompt_sha256")
                     current_prompt_sha = hashlib.sha256(
@@ -749,9 +813,13 @@ def main() -> int:
             if i < start_index:
                 continue
             logger.info(f"Processing chunk {i}/{len(chunks)}...")
+            current_output_for_prompt = _tail_text(
+                accumulated_prompt_output,
+                limit=args.max_current_output_chars,
+            )
             prompt = _render_prompt(
                 prompt_template,
-                current_output=accumulated_prompt_output,
+                current_output=current_output_for_prompt,
                 current_input=chunk,
             )
 
