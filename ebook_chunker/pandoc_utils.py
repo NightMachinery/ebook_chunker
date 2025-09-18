@@ -57,7 +57,7 @@ def convert_text(
         return result.stdout
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
-            f"Pandoc conversion failed: {e.stderr.decode() if e.stderr else str(e)}"
+            f"Pandoc conversion failed: {e.stderr if e.stderr else str(e)}"
         ) from e
     except FileNotFoundError:
         raise RuntimeError("pandoc command not found. Please install pandoc.") from None
