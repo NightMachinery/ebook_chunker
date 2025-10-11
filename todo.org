@@ -1,5 +1,7 @@
 #+TITLE: ebook_chunker/todo
 
+* Rename to =llm-chunker= and =llm-feeder=. Rename everything, including executables and module names, etc.
+
 * =uniborg/epub_util= was copied to [[file:ebook_chunker/epub_chunker.py]].
 We need to later on reuse this library in borg, and DRY.
 

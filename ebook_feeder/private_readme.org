@@ -86,3 +86,14 @@ tmuxnewsh2 circle_Flash25 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI
 $proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'tmp/boundaries_podcast_dr_hayes_opus_v1.3.2.md' --prompt prompts/translate_2fa_v1.md --min-chunk-chars 15000 --max-chunk-chars 30000 -m gemini/gemini-2.5-pro -o 'tmp/boundaries_podcast_dr_hayes_opus_v1.3.2_fa.md'
 #+end_src
 
+** ghosthunters
+#+begin_src zsh :eval never
+$proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'tmp/ghosthunters/Ghosthunters and the Totally Moldy.epub' --prompt prompts/translate_2fa_v1.md --min-chunk-chars 10000 --max-chunk-chars 30000 -m gemini/gemini-2.5-pro --max-current-output-chars 250_000 -o 'tmp/ghosthunters/Ghosthunters and the Totally Moldy_fa.md'
+#+end_src
+
+** English
+#+begin_src zsh :eval never
+$proxyenv ebook-feeder --gemini-api-key-file="${GEMINI_API_KEYS}" -vv 'harmony.md' --prompt ~[ebook_chunker]/prompts/translate_2en_v1.md --min-chunk-chars 15000 --max-chunk-chars 30000 -o 'en/harmony_en.md'
+# -m gemini/gemini-2.5-pro
+#+end_src
+
