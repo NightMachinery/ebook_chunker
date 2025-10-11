@@ -28,6 +28,7 @@ from .constants import (
     PROMPT_CURRENT_OUTPUT_PLACEHOLDER,
     MAX_RETRIES_DEFAULT,
     RETRY_DELAY_DEFAULT,
+    DEFAULT_MODEL,
 )
 from .models import ChunkResult
 
@@ -319,7 +320,7 @@ def parse_arguments() -> argparse.Namespace:
         "--model",
         type=str,
         help=(
-            "Model name to use (default: env EBOOK_FEEDER_MODEL or 'gemini/gemini-2.5-flash')"
+            f"Model name to use (default: env EBOOK_FEEDER_MODEL or '{DEFAULT_MODEL}')"
         ),
     )
 
@@ -453,9 +454,7 @@ def main() -> int:
 
         model_name = args.model or os.environ.get("EBOOK_FEEDER_MODEL")
         if not model_name:
-            model_name = (
-                "interactive/manual" if args.interactive else "gemini/gemini-2.5-flash"
-            )
+            model_name = "interactive/manual" if args.interactive else DEFAULT_MODEL
         run_mode = _describe_run_mode(interactive=args.interactive)
 
         # Resolve output path
